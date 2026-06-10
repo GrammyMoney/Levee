@@ -341,9 +341,24 @@ fn get_probe_data(app: tauri::AppHandle, path: String) -> Result<ProbeData, Stri
     })
 }
 
-// ── Proxy commands ────────────────────────────────────────────────────────────
+// ── Proxy path helpers ────────────────────────────────────────────────────────
 
-/// Returns {drive_root}\Levee Proxies for the given file.
+/// FNV-1a 64-bit hash — deterministic across runs and machines.
+fn fnv1a(s: &str) -> u64 {
+    let mut h: u64 = 14695981039346656037;
+    for b in s.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(1099511628211);
+    }
+    h
+}
+
+/// Normalize a path for hashing: lowercase, backslashes → forward slashes.
+fn norm_for_hash(path: &Path) -> String {
+    path.to_string_lossy().to_lowercase().replace('\\', "/")
+}
+
+/// Returns the `Levee Proxies` root on the same drive as `original`.
 fn proxies_root_for(original: &Path) -> Result<PathBuf, String> {
     use std::path::Component;
     match original.components().next() {
@@ -355,17 +370,39 @@ fn proxies_root_for(original: &Path) -> Result<PathBuf, String> {
     }
 }
 
+/// Computes the deterministic proxy path for an original file.
+///
+/// Structure: `{drive_root}\Levee Proxies\{xx}\{yy}\{hash16}.mp4`
+/// where xx/yy are the first two pairs of hex digits of the FNV-1a hash of the
+/// normalized original path.  This gives 65 536 buckets — identical to Git's
+/// object-store layout — so filesystem performance stays consistent at any scale.
+fn proxy_path_for(original: &Path) -> Result<PathBuf, String> {
+    let root  = proxies_root_for(original)?;
+    let hash  = format!("{:016x}", fnv1a(&norm_for_hash(original)));
+    // hash is exactly 16 hex chars; take pairs for the two bucket levels
+    let dir1  = &hash[0..2];
+    let dir2  = &hash[2..4];
+    Ok(root.join(dir1).join(dir2).join(format!("{hash}.mp4")))
+}
+
+// ── Proxy commands ────────────────────────────────────────────────────────────
+
+/// Returns the proxy path if the proxy file exists on disk.
+/// Path is fully deterministic — no DB query needed.
 #[tauri::command]
-fn get_proxy(state: tauri::State<AppState>, original_path: String) -> Option<String> {
-    let mut pool = state.0.lock().unwrap();
-    let db = pool.db_for(Path::new(&original_path));
-    db.query_row(
-        "SELECT proxy_path FROM proxies WHERE original_path = ?1",
-        [&original_path],
-        |row| row.get::<_, String>(0),
-    )
-    .ok()
-    .filter(|p| Path::new(p).exists())
+fn get_proxy(original_path: String) -> Option<String> {
+    let path = proxy_path_for(Path::new(&original_path)).ok()?;
+    if path.exists() { Some(path.to_string_lossy().into_owned()) } else { None }
+}
+
+/// Batch proxy lookup — returns map of original_path → proxy_path for files
+/// whose proxy file exists on disk.  DB-free: just checks computed paths.
+#[tauri::command]
+fn get_proxies_batch(file_paths: Vec<String>) -> HashMap<String, String> {
+    file_paths.into_iter().filter_map(|orig| {
+        let proxy = proxy_path_for(Path::new(&orig)).ok()?;
+        if proxy.exists() { Some((orig, proxy.to_string_lossy().into_owned())) } else { None }
+    }).collect()
 }
 
 #[tauri::command]
@@ -373,31 +410,19 @@ async fn generate_proxy(
     state: tauri::State<'_, AppState>,
     original_path: String,
 ) -> Result<String, String> {
-    let root = proxies_root_for(Path::new(&original_path))?;
-    std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    let proxy_pb  = proxy_path_for(Path::new(&original_path))?;
+    let proxy_str = proxy_pb.to_string_lossy().into_owned();
 
-    // Return existing proxy if still valid
-    {
-        let mut pool = state.0.lock().unwrap();
-        let db = pool.db_for(Path::new(&original_path));
-        if let Ok(existing) = db.query_row(
-            "SELECT proxy_path FROM proxies WHERE original_path = ?1",
-            [&original_path],
-            |row| row.get::<_, String>(0),
-        ) {
-            if Path::new(&existing).exists() {
-                return Ok(existing);
-            }
-        }
+    // Return immediately if proxy already exists
+    if proxy_pb.exists() { return Ok(proxy_str); }
+
+    // Ensure bucket directory exists
+    if let Some(dir) = proxy_pb.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
 
-    let proxy_path = root
-        .join(format!("{}.mp4", uuid::Uuid::new_v4()))
-        .to_string_lossy()
-        .into_owned();
-
     let orig  = original_path.clone();
-    let proxy = proxy_path.clone();
+    let proxy = proxy_str.clone();
 
     let out = tauri::async_runtime::spawn_blocking(move || {
         std::process::Command::new("ffmpeg")
@@ -423,21 +448,33 @@ async fn generate_proxy(
         return Err(format!("ffmpeg error: {}", String::from_utf8_lossy(&out.stderr)));
     }
 
+    // Write to DB for auditing / shared discovery on Suite drives
     {
         let mut pool = state.0.lock().unwrap();
         let db = pool.db_for(Path::new(&original_path));
-        db.execute(
+        let _ = db.execute(
             "INSERT INTO proxies (original_path, proxy_path)
              VALUES (?1, ?2)
              ON CONFLICT(original_path) DO UPDATE SET
                proxy_path = excluded.proxy_path,
                created_at = strftime('%s','now')",
-            params![original_path, proxy_path],
-        )
-        .map_err(|e| e.to_string())?;
+            params![original_path, proxy_str],
+        );
     }
 
-    Ok(proxy_path)
+    Ok(proxy_str)
+}
+
+/// Deletes the proxy file and removes its DB record.
+#[tauri::command]
+fn delete_proxy(state: tauri::State<AppState>, original_path: String) -> Result<(), String> {
+    let proxy_pb = proxy_path_for(Path::new(&original_path))?;
+    let _ = std::fs::remove_file(&proxy_pb);
+    let mut pool = state.0.lock().unwrap();
+    let db = pool.db_for(Path::new(&original_path));
+    db.execute("DELETE FROM proxies WHERE original_path = ?1", [&original_path])
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -494,50 +531,6 @@ fn list_directory(path: String) -> Result<DirListing, String> {
     media_files.sort();
 
     Ok(DirListing { path, parent_path, subdirs, media_files })
-}
-
-/// Batch proxy lookup — returns map of original_path → proxy_path for files that have a proxy.
-#[tauri::command]
-fn get_proxies_batch(
-    state: tauri::State<AppState>,
-    file_paths: Vec<String>,
-) -> HashMap<String, String> {
-    if file_paths.is_empty() { return HashMap::new(); }
-    let mut result = HashMap::new();
-    let mut pool = state.0.lock().unwrap();
-    // Group files by their DB (each file may hit a different DB based on drive root)
-    for path in &file_paths {
-        let db = pool.db_for(Path::new(path));
-        if let Ok(proxy) = db.query_row(
-            "SELECT proxy_path FROM proxies WHERE original_path = ?1",
-            [path],
-            |row| row.get::<_, String>(0),
-        ) {
-            if Path::new(&proxy).exists() {
-                result.insert(path.clone(), proxy);
-            }
-        }
-    }
-    result
-}
-
-/// Removes a proxy record from the DB and deletes the file from disk.
-#[tauri::command]
-fn delete_proxy(state: tauri::State<AppState>, original_path: String) -> Result<(), String> {
-    let mut pool = state.0.lock().unwrap();
-    let db = pool.db_for(Path::new(&original_path));
-    // Fetch proxy path before deleting record
-    let proxy_path: Option<String> = db.query_row(
-        "SELECT proxy_path FROM proxies WHERE original_path = ?1",
-        [&original_path],
-        |row| row.get(0),
-    ).ok();
-    db.execute("DELETE FROM proxies WHERE original_path = ?1", [&original_path])
-        .map_err(|e| e.to_string())?;
-    if let Some(p) = proxy_path {
-        let _ = std::fs::remove_file(&p);
-    }
-    Ok(())
 }
 
 // ── Suite commands ────────────────────────────────────────────────────────────
