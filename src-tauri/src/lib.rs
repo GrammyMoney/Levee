@@ -744,6 +744,22 @@ fn precache_proxies_folder(original_path: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // A second instance was launched (e.g. user opened a file while Levee is running).
+            // Bring the existing window to front and forward the file argument.
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+            let file_args: Vec<String> = argv.into_iter()
+                .skip(1)
+                .filter(|a| !a.starts_with("--") && Path::new(a.as_str()).exists())
+                .collect();
+            if !file_args.is_empty() {
+                let _ = app.emit("open-file", file_args);
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
