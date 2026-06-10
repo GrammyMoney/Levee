@@ -13,13 +13,18 @@ const MEDIA_EXTENSIONS: &[&str] = &[
     "jpg", "jpeg", "png", "tiff", "tif", "webp",
 ];
 
-// Schema for levee.db — stored either at Suite drive root or app-local fallback.
-// Only proxies table needed; no asset metadata stored here.
+// Schema for levee.db — lives at {drive_root}\Levee\levee.db on Suite drives,
+// or the app-local fallback DB for non-Suite drives.
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS proxies (
     original_path TEXT PRIMARY KEY,
     proxy_path    TEXT NOT NULL,
     created_at    INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+);
+CREATE TABLE IF NOT EXISTS thumbnails (
+    original_path   TEXT PRIMARY KEY,
+    thumbnail_path  TEXT NOT NULL,
+    created_at      INTEGER NOT NULL DEFAULT (strftime('%s','now'))
 );
 ";
 
@@ -44,7 +49,10 @@ impl DbPool {
             let is_suite = self.suite_roots.iter().any(|r| norm_path(r) == norm);
             if is_suite {
                 if !self.suite.contains_key(root) {
-                    let db_path = Path::new(root).join("levee.db");
+                    let db_path = Path::new(root).join("Levee").join("levee.db");
+                    if let Some(dir) = db_path.parent() {
+                        let _ = std::fs::create_dir_all(dir);
+                    }
                     if let Ok(conn) = Connection::open(&db_path) {
                         let _ = conn.execute_batch(SCHEMA);
                         self.suite.insert(root.clone(), conn);
@@ -358,31 +366,44 @@ fn norm_for_hash(path: &Path) -> String {
     path.to_string_lossy().to_lowercase().replace('\\', "/")
 }
 
-/// Returns the `Levee Proxies` root on the same drive as `original`.
+/// Returns `{drive_root}\Levee\Proxies` for the drive containing `original`.
 fn proxies_root_for(original: &Path) -> Result<PathBuf, String> {
     use std::path::Component;
     match original.components().next() {
         Some(Component::Prefix(p)) => {
             let root = PathBuf::from(format!("{}\\", p.as_os_str().to_string_lossy()));
-            Ok(root.join("Levee Proxies"))
+            Ok(root.join("Levee").join("Proxies"))
         }
         _ => Err(format!("Cannot determine drive root for: {}", original.display())),
     }
 }
 
-/// Computes the deterministic proxy path for an original file.
-///
-/// Structure: `{drive_root}\Levee Proxies\{xx}\{yy}\{hash16}.mp4`
-/// where xx/yy are the first two pairs of hex digits of the FNV-1a hash of the
-/// normalized original path.  This gives 65 536 buckets — identical to Git's
-/// object-store layout — so filesystem performance stays consistent at any scale.
+/// Returns `{drive_root}\Levee\Thumbnails` for the drive containing `original`.
+fn thumbnails_root_for(original: &Path) -> Result<PathBuf, String> {
+    use std::path::Component;
+    match original.components().next() {
+        Some(Component::Prefix(p)) => {
+            let root = PathBuf::from(format!("{}\\", p.as_os_str().to_string_lossy()));
+            Ok(root.join("Levee").join("Thumbnails"))
+        }
+        _ => Err(format!("Cannot determine drive root for: {}", original.display())),
+    }
+}
+
+/// Deterministic hashed path for a proxy.
+/// `{drive_root}\Levee\Proxies\{xx}\{yy}\{hash16}.mp4`
 fn proxy_path_for(original: &Path) -> Result<PathBuf, String> {
-    let root  = proxies_root_for(original)?;
-    let hash  = format!("{:016x}", fnv1a(&norm_for_hash(original)));
-    // hash is exactly 16 hex chars; take pairs for the two bucket levels
-    let dir1  = &hash[0..2];
-    let dir2  = &hash[2..4];
-    Ok(root.join(dir1).join(dir2).join(format!("{hash}.mp4")))
+    let root = proxies_root_for(original)?;
+    let hash = format!("{:016x}", fnv1a(&norm_for_hash(original)));
+    Ok(root.join(&hash[0..2]).join(&hash[2..4]).join(format!("{hash}.mp4")))
+}
+
+/// Deterministic hashed path for a thumbnail.
+/// `{drive_root}\Levee\Thumbnails\{xx}\{yy}\{hash16}.jpg`
+fn thumbnail_path_for(original: &Path) -> Result<PathBuf, String> {
+    let root = thumbnails_root_for(original)?;
+    let hash = format!("{:016x}", fnv1a(&norm_for_hash(original)));
+    Ok(root.join(&hash[0..2]).join(&hash[2..4]).join(format!("{hash}.jpg")))
 }
 
 // ── Proxy commands ────────────────────────────────────────────────────────────
@@ -618,7 +639,94 @@ fn suite_precache_list() -> Result<Vec<String>, String> {
     Ok(paths)
 }
 
-/// Tells Suite to pre-cache the Levee Proxies folder on the same drive as the file.
+/// Extracts a single thumbnail frame from a video file using ffmpeg.
+/// Stored at `{drive_root}\Levee\Thumbnails\{xx}\{yy}\{hash16}.jpg`.
+/// Returns immediately if the file already exists (no ffmpeg needed).
+#[tauri::command]
+async fn get_thumbnail(
+    state: tauri::State<'_, AppState>,
+    original_path: String,
+) -> Result<String, String> {
+    let path  = Path::new(&original_path);
+    let thumb = thumbnail_path_for(path)?;
+    let thumb_str = thumb.to_string_lossy().into_owned();
+
+    // Fast path: already generated
+    if thumb.exists() {
+        return Ok(thumb_str);
+    }
+
+    // Create bucket dirs
+    if let Some(dir) = thumb.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+
+    let orig  = original_path.clone();
+    let dest  = thumb_str.clone();
+
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        std::process::Command::new("ffmpeg")
+            .args([
+                "-ss", "00:00:03",
+                "-i", &orig,
+                "-vframes", "1",
+                "-vf", "scale=320:-2",
+                "-q:v", "5",
+                "-y", &dest,
+            ])
+            .output()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("Failed to launch ffmpeg: {e}"))?;
+
+    if !out.status.success() || !thumb.exists() {
+        return Err(String::from_utf8_lossy(&out.stderr)
+            .lines().last().unwrap_or("ffmpeg failed").to_string());
+    }
+
+    // Write to DB for shared discovery on Suite drives
+    {
+        let mut pool = state.0.lock().unwrap();
+        let db = pool.db_for(path);
+        let _ = db.execute(
+            "INSERT INTO thumbnails (original_path, thumbnail_path)
+             VALUES (?1, ?2)
+             ON CONFLICT(original_path) DO UPDATE SET
+               thumbnail_path = excluded.thumbnail_path,
+               created_at = strftime('%s','now')",
+            params![original_path, thumb_str],
+        );
+    }
+
+    Ok(thumb_str)
+}
+
+/// Returns all mounted drive roots (Windows: A:\–Z:\; macOS: /Volumes/*).
+#[tauri::command]
+fn list_drives() -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    {
+        ('A'..='Z')
+            .filter_map(|c| {
+                let path = format!("{}:\\", c);
+                if std::path::Path::new(&path).exists() { Some(path) } else { None }
+            })
+            .collect()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut drives = vec!["/".to_string()];
+        if let Ok(entries) = std::fs::read_dir("/Volumes") {
+            for entry in entries.flatten() {
+                drives.push(entry.path().to_string_lossy().into_owned());
+            }
+        }
+        drives
+    }
+}
+
+/// Tells Suite to pre-cache the `Levee\Proxies` folder on the same drive as the file.
 #[tauri::command]
 fn precache_proxies_folder(original_path: String) -> Result<(), String> {
     let root = proxies_root_for(Path::new(&original_path))?;
@@ -688,6 +796,8 @@ pub fn run() {
             list_directory,
             get_proxies_batch,
             delete_proxy,
+            list_drives,
+            get_thumbnail,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Levee");

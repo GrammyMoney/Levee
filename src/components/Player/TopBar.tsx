@@ -66,26 +66,32 @@ export default function TopBar({
         </button>
       )}
 
-      {/* Suite pre-cache badge */}
-      {isSuiteFile && (
-        <button
-          onClick={() => togglePrecache(filePath)}
-          disabled={loading}
-          title={precached
-            ? 'Cached locally — click to remove from pre-cache'
-            : 'Click to pre-cache this asset'}
-          className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-all shrink-0 ${
-            loading
+      {/* Suite pre-cache badge — always visible; interactive for Suite files only */}
+      <button
+        onClick={() => { if (isSuiteFile && !loading) togglePrecache(filePath); }}
+        disabled={!isSuiteFile || loading}
+        title={
+          !isSuiteFile
+            ? 'Not a Suite asset'
+            : loading
+              ? 'Working…'
+              : precached
+                ? 'Cached locally — click to remove from pre-cache'
+                : 'Click to pre-cache this asset'
+        }
+        className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-all shrink-0 ${
+          !isSuiteFile
+            ? 'bg-white/6 text-white/20 cursor-default'
+            : loading
               ? 'bg-white/10 text-white/40 cursor-wait'
               : precached
                 ? 'bg-sky-500/25 text-sky-300 hover:bg-sky-500/35'
                 : 'bg-white/10 text-white/50 hover:bg-white/18 hover:text-white/80'
-          }`}
-        >
-          {loading ? <SpinnerIcon /> : precached ? <CloudCheckIcon /> : <CloudIcon />}
-          <span>{loading ? 'Working…' : precached ? 'Cached' : 'Pre-cache'}</span>
-        </button>
-      )}
+        }`}
+      >
+        {loading ? <SpinnerIcon /> : precached ? <CloudCheckIcon /> : <CloudIcon />}
+        <span>{!isSuiteFile ? 'Local' : loading ? 'Working…' : precached ? 'Cached' : 'Pre-cache'}</span>
+      </button>
 
       {/* Open file */}
       <button

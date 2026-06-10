@@ -25,8 +25,8 @@ function formatTimecode(s: number): string {
 }
 
 export default function Controls({ state, controls, visible, metaPanelOpen, onToggleMetadata }: Props) {
-  const { currentTime, duration, volume, isMuted, playbackRate, isLooping } = state;
-  const { seek, setVolume, setPlaybackRate, toggleLoop } = controls;
+  const { currentTime, duration, volume, isMuted, playbackRate, isLooping, isPlaying } = state;
+  const { seek, setVolume, setPlaybackRate, toggleLoop, toggle } = controls;
 
   const barRef = useRef<HTMLDivElement>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -124,7 +124,14 @@ export default function Controls({ state, controls, visible, metaPanelOpen, onTo
       </div>
 
       {/* Button row */}
-      <div className="flex justify-end items-center gap-1">
+      <div className="flex items-center gap-1">
+        {/* Play / Pause */}
+        <ChromeButton title={isPlaying ? 'Pause' : 'Play'} onClick={toggle}>
+          {isPlaying ? <PauseIcon /> : <PlayIcon />}
+        </ChromeButton>
+
+        <div className="flex-1" />
+
         {/* Volume */}
         <div className="relative" onMouseDown={e => e.stopPropagation()}>
           {showVolume && (
@@ -205,6 +212,22 @@ function TogglePill({ on }: { on: boolean }) {
     <div className={`w-8 h-4 rounded-full transition-colors ${on ? 'bg-white' : 'bg-white/25'}`}>
       <div className={`w-3 h-3 rounded-full bg-black m-0.5 transition-transform ${on ? 'translate-x-4' : ''}`} />
     </div>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M11.596 8.697L4.008 12.604A.5.5 0 0 1 3.5 12.145V3.855a.5.5 0 0 1 .508-.459.5.5 0 0 1 .271.081l7.588 3.907a.5.5 0 0 1-.27.813z" />
+    </svg>
+  );
+}
+
+function PauseIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5zm5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5z" />
+    </svg>
   );
 }
 
