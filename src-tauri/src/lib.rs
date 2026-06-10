@@ -446,6 +446,100 @@ fn get_proxies_root(original_path: String) -> Result<String, String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
+// ── Directory listing ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirListing {
+    pub path: String,
+    pub parent_path: Option<String>,
+    pub subdirs: Vec<String>,
+    pub media_files: Vec<String>,
+}
+
+#[tauri::command]
+fn list_directory(path: String) -> Result<DirListing, String> {
+    let dir = Path::new(&path);
+    if !dir.is_dir() {
+        return Err(format!("Not a directory: {path}"));
+    }
+
+    let parent_path = dir.parent().map(|p| p.to_string_lossy().into_owned());
+
+    let mut subdirs: Vec<String> = vec![];
+    let mut media_files: Vec<String> = vec![];
+
+    let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
+    for entry in entries.filter_map(|e| e.ok()) {
+        let ft = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        let full = entry.path().to_string_lossy().into_owned();
+        if ft.is_dir() {
+            subdirs.push(full);
+        } else if ft.is_file() {
+            let ext = entry.path()
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_lowercase())
+                .unwrap_or_default();
+            if MEDIA_EXTENSIONS.contains(&ext.as_str()) {
+                media_files.push(full);
+            }
+        }
+    }
+
+    subdirs.sort();
+    media_files.sort();
+
+    Ok(DirListing { path, parent_path, subdirs, media_files })
+}
+
+/// Batch proxy lookup — returns map of original_path → proxy_path for files that have a proxy.
+#[tauri::command]
+fn get_proxies_batch(
+    state: tauri::State<AppState>,
+    file_paths: Vec<String>,
+) -> HashMap<String, String> {
+    if file_paths.is_empty() { return HashMap::new(); }
+    let mut result = HashMap::new();
+    let mut pool = state.0.lock().unwrap();
+    // Group files by their DB (each file may hit a different DB based on drive root)
+    for path in &file_paths {
+        let db = pool.db_for(Path::new(path));
+        if let Ok(proxy) = db.query_row(
+            "SELECT proxy_path FROM proxies WHERE original_path = ?1",
+            [path],
+            |row| row.get::<_, String>(0),
+        ) {
+            if Path::new(&proxy).exists() {
+                result.insert(path.clone(), proxy);
+            }
+        }
+    }
+    result
+}
+
+/// Removes a proxy record from the DB and deletes the file from disk.
+#[tauri::command]
+fn delete_proxy(state: tauri::State<AppState>, original_path: String) -> Result<(), String> {
+    let mut pool = state.0.lock().unwrap();
+    let db = pool.db_for(Path::new(&original_path));
+    // Fetch proxy path before deleting record
+    let proxy_path: Option<String> = db.query_row(
+        "SELECT proxy_path FROM proxies WHERE original_path = ?1",
+        [&original_path],
+        |row| row.get(0),
+    ).ok();
+    db.execute("DELETE FROM proxies WHERE original_path = ?1", [&original_path])
+        .map_err(|e| e.to_string())?;
+    if let Some(p) = proxy_path {
+        let _ = std::fs::remove_file(&p);
+    }
+    Ok(())
+}
+
 // ── Suite commands ────────────────────────────────────────────────────────────
 
 fn run_suite_cmd(args: &[&str]) -> std::io::Result<std::process::Output> {
@@ -598,6 +692,9 @@ pub fn run() {
             suite_precache_remove,
             suite_precache_list,
             precache_proxies_folder,
+            list_directory,
+            get_proxies_batch,
+            delete_proxy,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Levee");

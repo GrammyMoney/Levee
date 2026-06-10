@@ -9,10 +9,11 @@ interface Props {
   isPlayingProxy?: boolean;
   onToggleProxy?: () => void;
   onOpenFile: () => void;
+  onOpenLibrary: () => void;
 }
 
 export default function TopBar({
-  fileName, filePath, visible, hasProxy, isPlayingProxy, onToggleProxy, onOpenFile,
+  fileName, filePath, visible, hasProxy, isPlayingProxy, onToggleProxy, onOpenFile, onOpenLibrary,
 }: Props) {
   const { isSuitePath, isPrecached, isLoading, togglePrecache } = useSuite();
   const isSuiteFile = isSuitePath(filePath);
@@ -29,17 +30,24 @@ export default function TopBar({
         visible ? 'chrome-visible' : 'chrome-hidden'
       }`}
     >
-      {/* Open in Explorer */}
+      {/* Library browser */}
       <button
         className="flex items-center justify-center w-7 h-7 rounded hover:bg-white/15 transition-colors text-white/80 hover:text-white shrink-0"
-        onClick={openInExplorer}
-        title="Show in Explorer"
+        onClick={onOpenLibrary}
+        title="Browse folder"
       >
         <FolderIcon />
       </button>
 
-      {/* Filename */}
+      {/* Filename + explorer shortcut */}
       <span className="flex-1 text-sm font-medium text-white truncate">{fileName}</span>
+      <button
+        className="flex items-center justify-center w-6 h-6 rounded hover:bg-white/10 transition-colors text-white/30 hover:text-white/70 shrink-0"
+        onClick={openInExplorer}
+        title="Show in Explorer"
+      >
+        <ExternalLinkIcon />
+      </button>
 
       {/* Proxy toggle */}
       {hasProxy && (
@@ -104,6 +112,15 @@ function OpenFileIcon() {
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <rect x="2" y="3" width="12" height="10" rx="1" />
       <path d="M5 3V2M8 3V2M11 3V2" />
+    </svg>
+  );
+}
+
+function ExternalLinkIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9" />
+      <path d="M10 2h4v4M14 2L8 8" />
     </svg>
   );
 }

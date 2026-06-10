@@ -1,16 +1,18 @@
 interface Props {
   visible: boolean;
   metaPanelOpen: boolean;
+  libraryOpen?: boolean;
   onPrev: () => void;
   onNext: () => void;
 }
 
-export default function ChevronNav({ visible, metaPanelOpen, onPrev, onNext }: Props) {
+export default function ChevronNav({ visible, metaPanelOpen, libraryOpen, onPrev, onNext }: Props) {
   return (
     <>
       <button
         onClick={e => { e.stopPropagation(); onPrev(); }}
-        className={`chrome absolute left-4 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-12 h-12 rounded-full glass text-white/80 hover:text-white hover:bg-white/20 transition-[opacity,right] duration-300 ${
+        style={{ left: libraryOpen ? 'calc(1rem + 480px)' : '1rem' }}
+        className={`chrome absolute top-1/2 -translate-y-1/2 z-40 flex items-center justify-center w-12 h-12 rounded-full glass text-white/80 hover:text-white hover:bg-white/20 transition-[opacity,left] duration-300 ${
           visible ? 'chrome-visible' : 'chrome-hidden'
         }`}
         aria-label="Previous file"

@@ -12,6 +12,7 @@ import TopBar from './TopBar';
 import Controls from './Controls';
 import ChevronNav from './ChevronNav';
 import MetadataPanel from '../MetadataPanel';
+import Library from '../Library';
 
 interface Props {
   filePath: string;
@@ -29,6 +30,7 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
 
   const [proxyPath, setProxyPath] = useState<string | null>(null);
   const [metaPanelOpen, setMetaPanelOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
 
   // Check for existing proxy when file changes
   useEffect(() => {
@@ -93,7 +95,7 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [filePath, proxyPath, handleToggleProxy, handleGenerateProxy]);
 
-  const chromeVisible = isVisible || !state.isPlaying;
+  const chromeVisible = isVisible || !state.isPlaying || libraryOpen;
   const fileName = getFileName(filePath);
 
   const handleOpenFile = useCallback(async () => {
@@ -130,11 +132,13 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
         isPlayingProxy={preferProxies && !!proxyPath}
         onToggleProxy={handleToggleProxy}
         onOpenFile={handleOpenFile}
+        onOpenLibrary={() => setLibraryOpen(true)}
       />
 
       <ChevronNav
         visible={chromeVisible}
         metaPanelOpen={metaPanelOpen}
+        libraryOpen={libraryOpen}
         onPrev={onPrevFile}
         onNext={onNextFile}
       />
@@ -151,6 +155,14 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
         isOpen={metaPanelOpen}
         filePath={filePath}
         onClose={() => setMetaPanelOpen(false)}
+      />
+
+      <Library
+        isOpen={libraryOpen}
+        initialPath={filePath}
+        currentFilePath={filePath}
+        onOpenFile={path => { onOpenFile(path); setLibraryOpen(false); }}
+        onClose={() => setLibraryOpen(false)}
       />
     </div>
   );
