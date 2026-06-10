@@ -18,6 +18,7 @@ interface SuiteContextValue {
   loadingPaths: Set<string>;
   isSuitePath: (path: string) => boolean;
   isPrecached: (path: string) => boolean;
+  precachedEntryFor: (path: string) => string | null;
   isLoading: (path: string) => boolean;
   addToPrecache: (paths: string[]) => Promise<void>;
   removeFromPrecache: (paths: string[]) => Promise<void>;
@@ -73,6 +74,19 @@ export function SuiteProvider({ children }: { children: ReactNode }) {
     });
   }, [precachedPaths]);
 
+  // Returns the actual registered Suite entry that covers `path`.
+  // May be a parent folder entry rather than the path itself.
+  const precachedEntryFor = useCallback((path: string): string | null => {
+    const nPath = norm(path);
+    for (const cached of precachedPaths) {
+      const nCached = norm(cached);
+      if (nPath === nCached || nPath.startsWith(nCached.endsWith('/') ? nCached : nCached + '/')) {
+        return cached;
+      }
+    }
+    return null;
+  }, [precachedPaths]);
+
   const isLoading = useCallback((path: string) =>
     loadingPaths.has(path),
   [loadingPaths]);
@@ -98,18 +112,25 @@ export function SuiteProvider({ children }: { children: ReactNode }) {
       setPrecachedPaths(prev => new Set([...prev, ...paths]));
     } finally {
       setLoadingPaths(prev => { const n = new Set(prev); paths.forEach(p => n.delete(p)); return n; });
+      // Resync with Suite's actual list to catch any path-format mismatches
+      refreshPrecache();
     }
-  }, []);
+  }, [refreshPrecache]);
 
   const togglePrecache = useCallback(async (path: string) => {
-    if (isPrecached(path)) await removeFromPrecache([path]);
-    else await addToPrecache([path]);
-  }, [isPrecached, addToPrecache, removeFromPrecache]);
+    if (isPrecached(path)) {
+      // Remove the actual registered entry (may be a parent folder, not the file itself)
+      const entry = precachedEntryFor(path);
+      await removeFromPrecache([entry ?? path]);
+    } else {
+      await addToPrecache([path]);
+    }
+  }, [isPrecached, precachedEntryFor, addToPrecache, removeFromPrecache]);
 
   return (
     <SuiteContext.Provider value={{
       suiteRoots, precachedPaths, loadingPaths,
-      isSuitePath, isPrecached, isLoading,
+      isSuitePath, isPrecached, precachedEntryFor, isLoading,
       addToPrecache, removeFromPrecache, togglePrecache,
       updateSuiteRoots, refreshPrecache,
     }}>
