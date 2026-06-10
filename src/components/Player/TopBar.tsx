@@ -15,10 +15,14 @@ interface Props {
 export default function TopBar({
   fileName, filePath, visible, hasProxy, isPlayingProxy, onToggleProxy, onOpenFile, onOpenLibrary,
 }: Props) {
-  const { isSuitePath, isPrecached, isLoading, togglePrecache } = useSuite();
-  const isSuiteFile = isSuitePath(filePath);
-  const precached   = isPrecached(filePath);
-  const loading     = isLoading(filePath);
+  const { isSuitePath, isPrecached, precachedEntryFor, isLoading, togglePrecache } = useSuite();
+  const isSuiteFile    = isSuitePath(filePath);
+  const precached      = isPrecached(filePath);
+  const loading        = isLoading(filePath);
+  const norm           = (p: string) => p.toLowerCase().replace(/\\/g, '/');
+  const cachedEntry    = precachedEntryFor(filePath);
+  // True when cached via a parent folder entry — show active state but disable interaction
+  const folderCached   = cachedEntry !== null && norm(cachedEntry) !== norm(filePath);
 
   const openInExplorer = () => {
     invoke('open_folder', { path: filePath }).catch(() => {});
@@ -68,25 +72,29 @@ export default function TopBar({
 
       {/* Suite pre-cache badge — always visible; interactive for Suite files only */}
       <button
-        onClick={() => { if (isSuiteFile && !loading) togglePrecache(filePath); }}
-        disabled={!isSuiteFile || loading}
+        onClick={() => { if (isSuiteFile && !loading && !folderCached) togglePrecache(filePath); }}
+        disabled={!isSuiteFile || loading || folderCached}
         title={
           !isSuiteFile
             ? 'Not a Suite asset'
             : loading
               ? 'Working…'
-              : precached
-                ? 'Cached locally — click to remove from pre-cache'
-                : 'Click to pre-cache this asset'
+              : folderCached
+                ? 'Cached via parent folder'
+                : precached
+                  ? 'Cached locally — click to remove from pre-cache'
+                  : 'Click to pre-cache this asset'
         }
         className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-all shrink-0 ${
           !isSuiteFile
             ? 'bg-white/6 text-white/20 cursor-default'
             : loading
               ? 'bg-white/10 text-white/40 cursor-wait'
-              : precached
-                ? 'bg-sky-500/25 text-sky-300 hover:bg-sky-500/35'
-                : 'bg-white/10 text-white/50 hover:bg-white/18 hover:text-white/80'
+              : folderCached
+                ? 'bg-sky-500/25 text-sky-300 cursor-default'
+                : precached
+                  ? 'bg-sky-500/25 text-sky-300 hover:bg-sky-500/35'
+                  : 'bg-white/10 text-white/50 hover:bg-white/18 hover:text-white/80'
         }`}
       >
         {loading ? <SpinnerIcon /> : precached ? <CloudCheckIcon /> : <CloudIcon />}

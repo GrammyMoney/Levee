@@ -57,9 +57,10 @@ export default function Library({
 }: Props) {
   const {
     suiteRoots, updateSuiteRoots,
-    isSuitePath, isPrecached, isLoading: isSuiteLoading,
+    isSuitePath, isPrecached, precachedEntryFor, isLoading: isSuiteLoading,
     addToPrecache, removeFromPrecache, togglePrecache,
   } = useSuite();
+  const normPath = (p: string) => p.toLowerCase().replace(/\\/g, '/');
   const { queueProxy } = useProxy();
 
   const [listing, setListing] = useState<DirListing | null>(null);
@@ -417,6 +418,8 @@ export default function Library({
                 const cached = isPrecached(file);
                 const cacheLoading = isSuiteLoading(file);
                 const isVideo = getAssetType(file) === 'video';
+                const cachedEntry = precachedEntryFor(file);
+                const folderCached = cachedEntry !== null && normPath(cachedEntry) !== normPath(file);
 
                 const handleClick = (e: React.MouseEvent) => {
                   if (e.ctrlKey || e.metaKey) {
@@ -500,19 +503,21 @@ export default function Library({
                             !isSuite
                               ? 'Not a Suite asset'
                               : cacheLoading ? 'Working…'
-                              : cached ? 'Cached locally — click to remove'
+                              : folderCached ? 'Cached via parent folder'
+                              : cached ? 'Cached — click to remove'
                               : 'Not pre-cached — click to add'
                           }
-                          disabled={!isSuite || cacheLoading}
+                          disabled={!isSuite || cacheLoading || folderCached}
                           onClick={e => {
                             e.stopPropagation();
-                            if (isSuite && !cacheLoading) togglePrecache(file);
+                            if (isSuite && !cacheLoading && !folderCached) togglePrecache(file);
                           }}
                           onDoubleClick={e => e.stopPropagation()}
                           className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
                             !isSuite
                               ? 'text-white/12 cursor-default'
                               : cacheLoading ? 'text-white/40 cursor-wait'
+                              : folderCached ? 'text-sky-400 cursor-default'
                               : cached ? 'text-sky-400 hover:text-red-400'
                               : 'text-white/25 hover:text-sky-400'
                           }`}
