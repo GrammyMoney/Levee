@@ -14,6 +14,12 @@ function savePrefs(prefs: Record<string, unknown>) {
 interface SettingsContextValue {
   preferProxies: boolean;
   setPreferProxies: (v: boolean) => void;
+  /// Whether the one-time "set as default player" prompt has been shown.
+  defaultPlayerPrompted: boolean;
+  setDefaultPlayerPrompted: (v: boolean) => void;
+  /// Whether the one-time Suite-drive onboarding tooltip has been shown.
+  suiteOnboarded: boolean;
+  setSuiteOnboarded: (v: boolean) => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -21,6 +27,12 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [preferProxies, _setPreferProxies] = useState<boolean>(
     () => (loadPrefs().preferProxies as boolean) ?? false
+  );
+  const [defaultPlayerPrompted, _setDefaultPlayerPrompted] = useState<boolean>(
+    () => (loadPrefs().defaultPlayerPrompted as boolean) ?? false
+  );
+  const [suiteOnboarded, _setSuiteOnboarded] = useState<boolean>(
+    () => (loadPrefs().suiteOnboarded as boolean) ?? false
   );
 
   const setPreferProxies = useCallback((v: boolean) => {
@@ -30,8 +42,26 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     savePrefs(prefs);
   }, []);
 
+  const setDefaultPlayerPrompted = useCallback((v: boolean) => {
+    _setDefaultPlayerPrompted(v);
+    const prefs = loadPrefs();
+    prefs.defaultPlayerPrompted = v;
+    savePrefs(prefs);
+  }, []);
+
+  const setSuiteOnboarded = useCallback((v: boolean) => {
+    _setSuiteOnboarded(v);
+    const prefs = loadPrefs();
+    prefs.suiteOnboarded = v;
+    savePrefs(prefs);
+  }, []);
+
   return (
-    <SettingsContext.Provider value={{ preferProxies, setPreferProxies }}>
+    <SettingsContext.Provider value={{
+      preferProxies, setPreferProxies,
+      defaultPlayerPrompted, setDefaultPlayerPrompted,
+      suiteOnboarded, setSuiteOnboarded,
+    }}>
       {children}
     </SettingsContext.Provider>
   );

@@ -24,6 +24,8 @@ interface Props {
   isOpen: boolean;
   initialPath: string;
   currentFilePath: string;
+  onboarding?: boolean;
+  onOnboardingDone?: () => void;
   onOpenFile: (path: string) => void;
   onClose: () => void;
 }
@@ -53,7 +55,7 @@ const EXT_COLORS: Record<string, string> = {
 };
 
 export default function Library({
-  isOpen, initialPath, currentFilePath, onOpenFile, onClose,
+  isOpen, initialPath, currentFilePath, onboarding, onOnboardingDone, onOpenFile, onClose,
 }: Props) {
   const {
     suiteRoots, updateSuiteRoots,
@@ -70,6 +72,11 @@ export default function Library({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [allDrives, setAllDrives] = useState<string[]>([]);
+
+  // Onboarding: jump straight to the drive settings so the tooltip has context.
+  useEffect(() => {
+    if (onboarding && isOpen) setShowSettings(true);
+  }, [onboarding, isOpen]);
 
   // Thumbnail extraction queue — max 3 concurrent ffmpeg instances
   const thumbQueue   = useRef<string[]>([]);
@@ -368,11 +375,9 @@ export default function Library({
           <DriveSettingsPanel
             allDrives={allDrives}
             suiteRoots={suiteRoots}
+            onboarding={!!onboarding}
+            onOnboardingDone={onOnboardingDone}
             onToggle={toggleSuiteRoot}
-            onAutoDetect={async () => {
-              const roots = await invoke<string[]>('get_suite_mounts').catch(() => [] as string[]);
-              if (roots.length > 0) updateSuiteRoots(roots);
-            }}
           />
         )}
 
@@ -549,12 +554,13 @@ export default function Library({
 // ── Settings panel ────────────────────────────────────────────────────────────
 
 function DriveSettingsPanel({
-  allDrives, suiteRoots, onToggle, onAutoDetect,
+  allDrives, suiteRoots, onboarding, onOnboardingDone, onToggle,
 }: {
   allDrives: string[];
   suiteRoots: string[];
+  onboarding?: boolean;
+  onOnboardingDone?: () => void;
   onToggle: (drive: string) => void;
-  onAutoDetect: () => void;
 }) {
   const norm = (p: string) => p.toLowerCase().replace(/\\/g, '/').replace(/\/$/, '');
   const isActive = (drive: string) =>
@@ -562,6 +568,31 @@ function DriveSettingsPanel({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      {onboarding && (
+        <div className="mx-3 mt-3 rounded-xl bg-amber-400/15 ring-1 ring-amber-400/40 px-4 py-3 flex items-start gap-3">
+          <div className="text-amber-300 shrink-0 mt-0.5">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-amber-100 text-xs font-semibold mb-0.5">Set your Suite drive</p>
+            <p className="text-amber-100/70 text-[11px] leading-relaxed">
+              Levee needs to know which drives hold your Suite footage. Toggle the
+              <span className="font-semibold text-amber-200"> Suite </span>
+              badge on for your Suite drive below — pre-cache controls only appear for those drives.
+            </p>
+          </div>
+          <button
+            onClick={onOnboardingDone}
+            className="shrink-0 text-amber-200/60 hover:text-amber-100 transition-colors"
+            title="Got it"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M2 2l8 8M10 2L2 10" /></svg>
+          </button>
+        </div>
+      )}
+
       <div className="px-4 py-3 border-b border-white/8 shrink-0">
         <p className="text-xs text-white/40 leading-relaxed">
           Select which drives are Suite drives. Pre-cache badges and controls only appear for files on Suite drives.
@@ -595,7 +626,7 @@ function DriveSettingsPanel({
                 active
                   ? 'bg-sky-500/25 text-sky-300'
                   : 'bg-white/8 text-white/25 group-hover:bg-white/12 group-hover:text-white/40'
-              }`}>
+              } ${onboarding && !active ? 'ring-2 ring-amber-400/60 animate-pulse' : ''}`}>
                 {active ? <><span className="w-1 h-1 rounded-full bg-sky-400 shrink-0" />Suite</> : 'Not Suite'}
               </span>
             </button>
@@ -603,16 +634,23 @@ function DriveSettingsPanel({
         })}
       </div>
 
-      <div className="shrink-0 border-t border-white/8 px-3 py-2.5 flex items-center justify-end">
+      <div className="shrink-0 border-t border-white/8 px-4 py-3">
         <button
-          onClick={onAutoDetect}
-          className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white/80 transition-colors"
+          onClick={() => invoke('set_as_default_player').catch(() => {})}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-white/8 hover:bg-white/14 text-sm text-white/70 hover:text-white transition-colors"
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-          </svg>
-          Auto-detect
+          Set Levee as default video player
+        </button>
+        <p className="text-[10px] text-white/30 mt-1.5 text-center">Opens Windows Default apps settings</p>
+      </div>
+
+      <div className="shrink-0 border-t border-white/8 px-4 py-2.5 flex items-center justify-center">
+        <button
+          onClick={() => invoke('open_url', { url: 'https://github.com/GrammyMoney/levee' }).catch(() => {})}
+          className="text-[11px] text-white/30 hover:text-white/60 transition-colors"
+          title="View Levee on GitHub"
+        >
+          Made with <span className="text-red-400/80">♥</span> in Dallas, TX by Alex Bagheri
         </button>
       </div>
     </div>

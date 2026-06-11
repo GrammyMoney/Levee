@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
-import { useVideoPlayer } from '../../hooks/useVideoPlayer';
+import { invoke } from '@tauri-apps/api/core';
+import { useMpvPlayer } from '../../hooks/useMpvPlayer';
 import { useAutoHide } from '../../hooks/useAutoHide';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { getFileName, getAssetType } from '../../types';
@@ -22,17 +22,33 @@ interface Props {
 }
 
 export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }: Props) {
-  const { videoRef, state, controls, eventHandlers } = useVideoPlayer();
+  const { state, controls, openFile } = useMpvPlayer();
   const { isVisible, show, hide } = useAutoHide(2000);
   const { isSuitePath, refreshPrecache } = useSuite();
-  const { preferProxies, setPreferProxies } = useSettings();
+  const {
+    preferProxies, setPreferProxies,
+    defaultPlayerPrompted, suiteOnboarded, setSuiteOnboarded,
+  } = useSettings();
   const { queueProxy } = useProxy();
 
   const [proxyPath, setProxyPath] = useState<string | null>(null);
   const [metaPanelOpen, setMetaPanelOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [onboarding, setOnboarding] = useState(false);
 
-  // Check for existing proxy when file changes
+  // After the "set as default" prompt, walk new users through setting their
+  // Suite drive: open the library settings with a highlighted tooltip.
+  useEffect(() => {
+    if (defaultPlayerPrompted && !suiteOnboarded) {
+      setLibraryOpen(true);
+      setOnboarding(true);
+    }
+  }, [defaultPlayerPrompted, suiteOnboarded]);
+
+  const currentTimeRef = useRef(0);
+  useEffect(() => { currentTimeRef.current = state.currentTime; }, [state.currentTime]);
+
+  // Check for an existing proxy when the original file changes
   useEffect(() => {
     if (isSuitePath(filePath)) refreshPrecache();
     if (getAssetType(filePath) !== 'video') { setProxyPath(null); return; }
@@ -43,34 +59,25 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
     return () => { cancelled = true; };
   }, [filePath]);
 
-  const activeSrc = (preferProxies && proxyPath)
-    ? convertFileSrc(proxyPath)
-    : convertFileSrc(filePath);
+  // The path actually fed to mpv (proxy is just a lighter file mpv plays natively)
+  const activePath = (preferProxies && proxyPath) ? proxyPath : filePath;
 
-  // Restore playback position after proxy/original swap
-  const pendingSeekRef = useRef<{ time: number; playing: boolean } | null>(null);
-  useEffect(() => { pendingSeekRef.current = null; }, [filePath]);
+  // Load into mpv whenever the active path changes
+  const prevPathRef = useRef('');
   useEffect(() => {
-    const video = videoRef.current;
-    const pending = pendingSeekRef.current;
-    if (!video || !pending) return;
-    const onLoaded = () => {
-      video.currentTime = pending.time;
-      if (pending.playing) video.play().catch(() => {});
-      pendingSeekRef.current = null;
-    };
-    video.addEventListener('loadedmetadata', onLoaded);
-    return () => video.removeEventListener('loadedmetadata', onLoaded);
-  }, [activeSrc]);
+    if (activePath === prevPathRef.current) return;
+    prevPathRef.current = activePath;
+    openFile(activePath);
+  }, [activePath, openFile]);
 
   const handleToggleProxy = useCallback(() => {
     if (!proxyPath) return;
-    const video = videoRef.current;
-    if (video) {
-      pendingSeekRef.current = { time: video.currentTime, playing: !video.paused };
-    }
+    const resume = currentTimeRef.current;
+    const next = (!preferProxies && proxyPath) ? proxyPath : filePath;
     setPreferProxies(!preferProxies);
-  }, [proxyPath, preferProxies, setPreferProxies]);
+    prevPathRef.current = next;
+    openFile(next, resume);
+  }, [proxyPath, preferProxies, setPreferProxies, filePath, openFile]);
 
   const handleGenerateProxy = useCallback(async () => {
     try {
@@ -79,7 +86,7 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
     } catch {}
   }, [filePath, queueProxy]);
 
-  // P key: toggle proxy/original if proxy exists, or generate one
+  // P key: toggle proxy/original if proxy exists, else generate one
   useEffect(() => {
     if (getAssetType(filePath) !== 'video') return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -110,24 +117,21 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
   });
 
   return (
+    // No bg — mpv renders behind the transparent WebView via DirectComposition.
     <div
-      className="relative w-full h-full bg-black overflow-hidden"
+      className="relative w-full h-full overflow-hidden"
       onMouseMove={show}
       onMouseEnter={show}
       onMouseLeave={hide}
       style={{ cursor: chromeVisible ? 'default' : 'none' }}
     >
-      <VideoElement
-        ref={videoRef}
-        src={activeSrc}
-        onClick={controls.toggle}
-        {...eventHandlers}
-      />
+      <VideoElement onClick={controls.toggle} />
 
       <TopBar
         fileName={fileName}
         filePath={filePath}
         visible={chromeVisible}
+        libraryOpen={libraryOpen}
         hasProxy={!!proxyPath}
         isPlayingProxy={preferProxies && !!proxyPath}
         onToggleProxy={handleToggleProxy}
@@ -161,6 +165,8 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
         isOpen={libraryOpen}
         initialPath={filePath}
         currentFilePath={filePath}
+        onboarding={onboarding}
+        onOnboardingDone={() => { setOnboarding(false); setSuiteOnboarded(true); }}
         onOpenFile={path => { onOpenFile(path); setLibraryOpen(false); }}
         onClose={() => setLibraryOpen(false)}
       />

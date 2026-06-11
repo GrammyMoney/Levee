@@ -34,14 +34,6 @@ export function SuiteProvider({ children }: { children: ReactNode }) {
   const [precachedPaths, setPrecachedPaths] = useState<Set<string>>(new Set());
   const [loadingPaths,   setLoadingPaths]   = useState<Set<string>>(new Set());
 
-  // Auto-detect Suite mounts only if user hasn't configured anything yet
-  useEffect(() => {
-    if (loadSaved() !== null) return;
-    invoke<string[]>('get_suite_mounts')
-      .then(roots => { if (roots.length > 0) setSuiteRoots(roots); })
-      .catch(() => {});
-  }, []);
-
   // Keep Rust DB-routing state in sync with React state
   useEffect(() => {
     invoke('set_suite_roots', { roots: suiteRoots }).catch(() => {});

@@ -1,3 +1,6 @@
+mod dcomp;
+mod mpv;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -69,6 +72,15 @@ impl DbPool {
 
 struct AppState(Mutex<DbPool>);
 
+/// Holds the live libmpv handle for control commands.
+struct MpvState {
+    handle: mpv::Handle,
+}
+
+/// A file the app was launched with (file association / CLI), pulled by the
+/// frontend once it mounts. Avoids a race with the fire-and-forget open event.
+struct PendingOpen(Mutex<Option<String>>);
+
 fn norm_path(p: &str) -> String {
     p.to_lowercase().replace('/', "\\").trim_end_matches('\\').to_string() + "\\"
 }
@@ -136,6 +148,59 @@ fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
     app.opener().open_path(dir, None::<&str>).map_err(|e| e.to_string())
 }
 
+/// Returns (and clears) the file the app was launched with, if any.
+/// Called by the frontend on mount to open files from associations/CLI.
+#[tauri::command]
+fn take_launch_file(pending: tauri::State<PendingOpen>) -> Option<String> {
+    pending.0.lock().unwrap().take()
+}
+
+/// Opens the Windows "Default apps" settings so the user can make Levee the
+/// default handler for video files. Win10/11 require the user to confirm the
+/// choice there — an app can't silently set itself as default.
+#[tauri::command]
+fn set_as_default_player() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use windows::core::{w, HSTRING};
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let uri = HSTRING::from("ms-settings:defaultapps");
+        let r = unsafe { ShellExecuteW(None, w!("open"), &uri, None, None, SW_SHOWNORMAL) };
+        // ShellExecuteW returns an HINSTANCE; a value <= 32 means failure.
+        if (r.0 as isize) <= 32 {
+            return Err("failed to open Default apps settings".into());
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        Err("only available on Windows".into())
+    }
+}
+
+/// Opens a URL in the user's default browser.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use windows::core::{w, HSTRING};
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let u = HSTRING::from(url);
+        let r = unsafe { ShellExecuteW(None, w!("open"), &u, None, None, SW_SHOWNORMAL) };
+        if (r.0 as isize) <= 32 {
+            return Err("failed to open URL".into());
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = url;
+        Err("only available on Windows".into())
+    }
+}
+
 // ── ffprobe metadata ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -153,6 +218,50 @@ pub struct ProbeData {
     pub audio_channels: u32,
     pub file_size: String,
     pub color_space: String,
+}
+
+/// Build a process Command that does NOT flash a console window on Windows.
+/// (CREATE_NO_WINDOW = 0x08000000.) Used for every external tool we spawn.
+fn quiet_command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
+    let cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = cmd;
+        cmd.creation_flags(0x0800_0000);
+        return cmd;
+    }
+    #[cfg(not(windows))]
+    cmd
+}
+
+/// Resolve the `ffmpeg` executable. Prefers the bundled sidecar shipped next to
+/// the app exe, then common install locations (winget's shim dir), then PATH.
+fn resolve_ffmpeg() -> String {
+    // Bundled sidecar (externalBin): lands next to the exe as `ffmpeg.exe`.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let sidecar = dir.join(if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" });
+            if sidecar.exists() {
+                return sidecar.to_string_lossy().into_owned();
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            let shim = Path::new(&local)
+                .join("Microsoft").join("WinGet").join("Links").join("ffmpeg.exe");
+            if shim.exists() { return shim.to_string_lossy().into_owned(); }
+        }
+        for c in [
+            r"C:\ffmpeg\bin\ffmpeg.exe",
+            r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
+        ] {
+            if Path::new(c).exists() { return c.to_string(); }
+        }
+    }
+    "ffmpeg".to_string()
 }
 
 /// Locate the bundled ffprobe sidecar. In dev mode falls back to PATH.
@@ -246,7 +355,7 @@ fn pretty_container(fmt_name: &str) -> String {
 #[tauri::command]
 fn get_probe_data(app: tauri::AppHandle, path: String) -> Result<ProbeData, String> {
     let ffprobe = ffprobe_binary(&app);
-    let output = std::process::Command::new(&ffprobe)
+    let output = quiet_command(&ffprobe)
         .args([
             "-v", "quiet",
             "-print_format", "json",
@@ -444,9 +553,10 @@ async fn generate_proxy(
 
     let orig  = original_path.clone();
     let proxy = proxy_str.clone();
+    let ffmpeg = resolve_ffmpeg();
 
     let out = tauri::async_runtime::spawn_blocking(move || {
-        std::process::Command::new("ffmpeg")
+        quiet_command(&ffmpeg)
             .args([
                 "-i",        &orig,
                 "-vf",       "scale=trunc(iw/4)*2:trunc(ih/4)*2",
@@ -557,30 +667,7 @@ fn list_directory(path: String) -> Result<DirListing, String> {
 // ── Suite commands ────────────────────────────────────────────────────────────
 
 fn run_suite_cmd(args: &[&str]) -> std::io::Result<std::process::Output> {
-    std::process::Command::new("suite").args(args).output()
-}
-
-/// Returns drive roots (e.g. "S:\\") currently mounted by Suite.
-#[tauri::command]
-fn get_suite_mounts() -> Vec<String> {
-    let Ok(output) = run_suite_cmd(&["drive", "list"]) else { return vec![]; };
-    let text = String::from_utf8_lossy(&output.stdout);
-    let mut seen = std::collections::HashSet::new();
-    let bytes = text.as_bytes();
-    for i in 0..bytes.len() {
-        let b = bytes[i];
-        if b.is_ascii_alphabetic() && i + 1 < bytes.len() && bytes[i + 1] == b':' {
-            let prev_ok = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
-            if prev_ok {
-                let letter = (b as char).to_ascii_uppercase();
-                let root = format!("{}:\\", letter);
-                if Path::new(&root).exists() {
-                    seen.insert(root);
-                }
-            }
-        }
-    }
-    seen.into_iter().collect()
+    quiet_command("suite").args(args).output()
 }
 
 /// Updates the in-memory list of Suite roots used for DB routing.
@@ -663,9 +750,10 @@ async fn get_thumbnail(
 
     let orig  = original_path.clone();
     let dest  = thumb_str.clone();
+    let ffmpeg = resolve_ffmpeg();
 
     let out = tauri::async_runtime::spawn_blocking(move || {
-        std::process::Command::new("ffmpeg")
+        quiet_command(&ffmpeg)
             .args([
                 "-ss", "00:00:03",
                 "-i", &orig,
@@ -739,10 +827,168 @@ fn precache_proxies_folder(original_path: String) -> Result<(), String> {
     }
 }
 
+
+// ── mpv playback state + control plane ──────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MpvPlayerState {
+    pub time_pos: f64,
+    pub duration: f64,
+    pub paused: bool,
+    pub volume: f64,
+    pub speed: f64,
+    pub eof: bool,
+}
+
+/// Property-observe reply ids (arbitrary, used to route property-change events).
+const OBS_TIME_POS: u64 = 1;
+const OBS_DURATION: u64 = 2;
+const OBS_PAUSE: u64 = 3;
+const OBS_EOF: u64 = 4;
+const OBS_SPEED: u64 = 5;
+const OBS_VOLUME: u64 = 6;
+
+/// Spawns the mpv event-pump thread: observes key properties and emits
+/// "mpv-state" to the frontend whenever one changes.
+#[cfg(windows)]
+fn start_mpv_event_thread(handle: mpv::Handle, app: tauri::AppHandle) {
+    handle.observe_double(OBS_TIME_POS, "time-pos");
+    handle.observe_double(OBS_DURATION, "duration");
+    handle.observe_flag(OBS_PAUSE, "pause");
+    handle.observe_flag(OBS_EOF, "eof-reached");
+    handle.observe_double(OBS_SPEED, "speed");
+    handle.observe_double(OBS_VOLUME, "volume");
+
+    std::thread::spawn(move || {
+        let mut state = MpvPlayerState { volume: 100.0, speed: 1.0, ..Default::default() };
+        loop {
+            let ev = unsafe { handle.wait_event(0.5) };
+            if ev.is_null() {
+                continue;
+            }
+            let ev = unsafe { &*ev };
+            match ev.event_id {
+                mpv::MPV_EVENT_SHUTDOWN => break,
+                mpv::MPV_EVENT_PROPERTY_CHANGE => {
+                    let prop = ev.data as *const mpv::mpv_event_property;
+                    if prop.is_null() {
+                        continue;
+                    }
+                    let prop = unsafe { &*prop };
+                    if prop.format == mpv::MPV_FORMAT_NONE || prop.data.is_null() {
+                        continue;
+                    }
+                    match ev.reply_userdata {
+                        OBS_TIME_POS => state.time_pos = unsafe { *(prop.data as *const f64) },
+                        OBS_DURATION => state.duration = unsafe { *(prop.data as *const f64) },
+                        OBS_SPEED => state.speed = unsafe { *(prop.data as *const f64) },
+                        OBS_VOLUME => state.volume = unsafe { *(prop.data as *const f64) },
+                        OBS_PAUSE => state.paused = unsafe { *(prop.data as *const std::ffi::c_int) } != 0,
+                        OBS_EOF => state.eof = unsafe { *(prop.data as *const std::ffi::c_int) } != 0,
+                        _ => continue,
+                    }
+                    let _ = app.emit("mpv-state", state.clone());
+                }
+                _ => {}
+            }
+        }
+    });
+}
+
+#[cfg(windows)]
+fn mpv_handle(state: &tauri::State<MpvState>) -> mpv::Handle {
+    state.handle
+}
+
+#[tauri::command]
+fn mpv_load(state: tauri::State<MpvState>, path: String) -> Result<(), String> {
+    #[cfg(windows)]
+    { mpv_handle(&state).command(&["loadfile", &path]) }
+    #[cfg(not(windows))]
+    { let _ = (&state, path); Err("mpv only available on Windows".into()) }
+}
+
+#[tauri::command]
+fn mpv_set_pause(state: tauri::State<MpvState>, paused: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    { mpv_handle(&state).set_flag("pause", paused) }
+    #[cfg(not(windows))]
+    { let _ = (&state, paused); Ok(()) }
+}
+
+#[tauri::command]
+fn mpv_seek(state: tauri::State<MpvState>, time: f64) -> Result<(), String> {
+    #[cfg(windows)]
+    { mpv_handle(&state).command(&["seek", &time.to_string(), "absolute"]) }
+    #[cfg(not(windows))]
+    { let _ = (&state, time); Ok(()) }
+}
+
+#[tauri::command]
+fn mpv_seek_by(state: tauri::State<MpvState>, delta: f64) -> Result<(), String> {
+    #[cfg(windows)]
+    { mpv_handle(&state).command(&["seek", &delta.to_string(), "relative"]) }
+    #[cfg(not(windows))]
+    { let _ = (&state, delta); Ok(()) }
+}
+
+#[tauri::command]
+fn mpv_frame_step(state: tauri::State<MpvState>, direction: i32) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let cmd = if direction >= 0 { "frame-step" } else { "frame-back-step" };
+        mpv_handle(&state).command(&[cmd])
+    }
+    #[cfg(not(windows))]
+    { let _ = (&state, direction); Ok(()) }
+}
+
+#[tauri::command]
+fn mpv_set_volume(state: tauri::State<MpvState>, volume: f64) -> Result<(), String> {
+    #[cfg(windows)]
+    { mpv_handle(&state).set_double("volume", volume.clamp(0.0, 130.0)) }
+    #[cfg(not(windows))]
+    { let _ = (&state, volume); Ok(()) }
+}
+
+#[tauri::command]
+fn mpv_set_mute(state: tauri::State<MpvState>, muted: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    { mpv_handle(&state).set_flag("mute", muted) }
+    #[cfg(not(windows))]
+    { let _ = (&state, muted); Ok(()) }
+}
+
+#[tauri::command]
+fn mpv_set_speed(state: tauri::State<MpvState>, speed: f64) -> Result<(), String> {
+    #[cfg(windows)]
+    { mpv_handle(&state).set_double("speed", speed) }
+    #[cfg(not(windows))]
+    { let _ = (&state, speed); Ok(()) }
+}
+
+#[tauri::command]
+fn mpv_set_loop(state: tauri::State<MpvState>, looping: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    { mpv_handle(&state).set_string("loop-file", if looping { "inf" } else { "no" }) }
+    #[cfg(not(windows))]
+    { let _ = (&state, looping); Ok(()) }
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Give the process an explicit AppUserModelID so Windows groups the taskbar
+    // button under Levee's identity and uses our window icon (not a generic one).
+    #[cfg(windows)]
+    unsafe {
+        use windows::core::HSTRING;
+        use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+        let _ = SetCurrentProcessExplicitAppUserModelID(&HSTRING::from("com.levee.app"));
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // A second instance was launched (e.g. user opened a file while Levee is running).
@@ -763,6 +1009,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Explicitly (re)apply the window icon so the taskbar uses the
+            // current branded icon regardless of what got embedded at build time.
+            if let (Some(win), Some(icon)) =
+                (app.get_webview_window("main"), app.default_window_icon().cloned())
+            {
+                let _ = win.set_icon(icon);
+            }
+
             let data_dir = app.path().app_data_dir()
                 .expect("failed to resolve app data dir");
             std::fs::create_dir_all(&data_dir)?;
@@ -778,24 +1032,60 @@ pub fn run() {
                 suite_roots: vec![],
             })));
 
-            // Forward CLI file arguments to the frontend after it mounts
-            let file_args: Vec<String> = std::env::args()
-                .skip(1)
-                .filter(|a| !a.starts_with("--") && Path::new(a).exists())
-                .collect();
+            // ── Native mpv video pipeline ─────────────────────────────────────
+            // Load libmpv, create the player, start the DComp video surface and
+            // the event-pump thread.
+            #[cfg(windows)]
+            {
+                use std::sync::atomic::AtomicU64;
+                match mpv::load().and_then(|_| mpv::Handle::create()) {
+                    Ok(handle) => {
+                        app.manage(MpvState { handle });
+                        if let Some(win) = app.get_webview_window("main") {
+                            let hwnd = win.hwnd().expect("main HWND").0 as isize;
+                            let size = win.inner_size().unwrap_or(tauri::PhysicalSize::new(1280, 720));
 
-            if !file_args.is_empty() {
-                let handle = app.handle().clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                    let _ = handle.emit("open-file", file_args);
-                });
+                            // Shared latest-window-size; the render thread resizes
+                            // its swapchain to match when this changes.
+                            let resize = std::sync::Arc::new(AtomicU64::new(
+                                dcomp::pack_size(size.width, size.height),
+                            ));
+                            dcomp::start(hwnd, size.width, size.height, handle, resize.clone());
+
+                            // Push physical-pixel size changes to the render thread.
+                            win.on_window_event(move |event| {
+                                if let tauri::WindowEvent::Resized(sz) = event {
+                                    if sz.width > 0 && sz.height > 0 {
+                                        resize.store(
+                                            dcomp::pack_size(sz.width, sz.height),
+                                            std::sync::atomic::Ordering::Relaxed,
+                                        );
+                                    }
+                                }
+                            });
+                        }
+                        start_mpv_event_thread(handle, app.handle().clone());
+                        eprintln!("[mpv] player initialized");
+                    }
+                    Err(e) => eprintln!("[mpv] init failed: {e}"),
+                }
             }
+
+            // Capture a launch file argument (file association / CLI). The
+            // frontend pulls this via `take_launch_file` once it mounts, which is
+            // race-free unlike a fire-and-forget event on a slow cold start.
+            let launch_file = std::env::args()
+                .skip(1)
+                .find(|a| !a.starts_with("--") && Path::new(a).exists());
+            app.manage(PendingOpen(Mutex::new(launch_file)));
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             pick_file,
+            take_launch_file,
+            set_as_default_player,
+            open_url,
             get_sibling_files,
             get_file_size,
             open_folder,
@@ -803,7 +1093,6 @@ pub fn run() {
             get_proxy,
             generate_proxy,
             get_proxies_root,
-            get_suite_mounts,
             set_suite_roots,
             suite_precache_add,
             suite_precache_remove,
@@ -814,6 +1103,16 @@ pub fn run() {
             delete_proxy,
             list_drives,
             get_thumbnail,
+            // mpv native player
+            mpv_load,
+            mpv_set_pause,
+            mpv_seek,
+            mpv_seek_by,
+            mpv_frame_step,
+            mpv_set_volume,
+            mpv_set_mute,
+            mpv_set_speed,
+            mpv_set_loop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Levee");

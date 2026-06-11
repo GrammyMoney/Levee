@@ -18,8 +18,8 @@
         "height": 720,
         "minWidth": 640,
         "minHeight": 360,
-        "decorations": true,
-        "transparent": false,
+        "decorations": false,
+        "transparent": true,
         "resizable": true
       }
     ],
@@ -42,14 +42,12 @@
       {
         "ext": ["mp4", "mov", "mkv", "avi", "webm", "mxf"],
         "name": "Video",
-        "description": "Video file",
-        "icon": "icons/icon.ico"
+        "description": "Video file"
       },
       {
         "ext": ["mp3", "wav", "aiff", "aac", "flac", "ogg"],
         "name": "Audio",
-        "description": "Audio file",
-        "icon": "icons/icon.ico"
+        "description": "Audio file"
       }
     ],
     "windows": {
@@ -60,7 +58,8 @@
         "displayLanguageSelector": false
       }
     },
-    "externalBin": ["binaries/ffprobe"],
+    "externalBin": ["binaries/ffprobe", "binaries/ffmpeg"],
+    "resources": ["binaries/libmpv-2.dll"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

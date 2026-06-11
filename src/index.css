@@ -10,7 +10,8 @@ html, body, #root {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background: #000;
+  /* SPIKE: transparent so the DirectComposition test pattern shows through */
+  background: transparent;
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   user-select: none;

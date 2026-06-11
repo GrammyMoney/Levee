@@ -1,10 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useSuite } from '../../contexts/SuiteContext';
 
 interface Props {
   fileName: string;
   filePath: string;
   visible: boolean;
+  libraryOpen?: boolean;
   hasProxy?: boolean;
   isPlayingProxy?: boolean;
   onToggleProxy?: () => void;
@@ -13,7 +15,7 @@ interface Props {
 }
 
 export default function TopBar({
-  fileName, filePath, visible, hasProxy, isPlayingProxy, onToggleProxy, onOpenFile, onOpenLibrary,
+  fileName, filePath, visible, libraryOpen, hasProxy, isPlayingProxy, onToggleProxy, onOpenFile, onOpenLibrary,
 }: Props) {
   const { isSuitePath, isPrecached, precachedEntryFor, isLoading, togglePrecache } = useSuite();
   const isSuiteFile    = isSuitePath(filePath);
@@ -28,23 +30,35 @@ export default function TopBar({
     invoke('open_folder', { path: filePath }).catch(() => {});
   };
 
+  const win = getCurrentWindow();
+
   return (
     <div
+      data-tauri-drag-region
       className={`chrome absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-4 py-3 glass ${
         visible ? 'chrome-visible' : 'chrome-hidden'
       }`}
     >
-      {/* Library browser */}
+      {/* Library browser + filename — faded out while the library panel is open
+          (it overlaps this area and is hard to read otherwise). */}
       <button
-        className="flex items-center justify-center w-7 h-7 rounded hover:bg-white/15 transition-colors text-white/80 hover:text-white shrink-0"
+        className={`flex items-center justify-center w-7 h-7 rounded hover:bg-white/15 transition-all duration-300 text-white/80 hover:text-white shrink-0 ${
+          libraryOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
+        }`}
         onClick={onOpenLibrary}
         title="Browse folder"
       >
         <FolderIcon />
       </button>
+      <span
+        className={`text-sm font-medium text-white truncate transition-opacity duration-300 ${
+          libraryOpen ? 'opacity-0' : 'opacity-100'
+        }`}
+      >
+        {fileName}
+      </span>
 
-      {/* Filename + explorer shortcut */}
-      <span className="flex-1 text-sm font-medium text-white truncate">{fileName}</span>
+      <span className="flex-1" />
       <button
         className="flex items-center justify-center w-6 h-6 rounded hover:bg-white/10 transition-colors text-white/30 hover:text-white/70 shrink-0"
         onClick={openInExplorer}
@@ -109,6 +123,31 @@ export default function TopBar({
       >
         <OpenFileIcon />
       </button>
+
+      {/* Window controls (frameless window) */}
+      <div className="flex items-center gap-0.5 ml-1 shrink-0" onClick={e => e.stopPropagation()}>
+        <button
+          onClick={() => win.minimize()}
+          className="flex items-center justify-center w-6 h-6 rounded text-white/40 hover:text-white hover:bg-white/15 transition-colors"
+          title="Minimize"
+        >
+          <MinimizeIcon />
+        </button>
+        <button
+          onClick={() => win.toggleMaximize()}
+          className="flex items-center justify-center w-6 h-6 rounded text-white/40 hover:text-white hover:bg-white/15 transition-colors"
+          title="Maximize"
+        >
+          <MaximizeIcon />
+        </button>
+        <button
+          onClick={() => win.close()}
+          className="flex items-center justify-center w-6 h-6 rounded text-white/40 hover:text-white hover:bg-red-500/70 transition-colors"
+          title="Close"
+        >
+          <CloseIcon />
+        </button>
+      </div>
     </div>
   );
 }
@@ -160,6 +199,30 @@ function SpinnerIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="animate-spin">
       <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+    </svg>
+  );
+}
+
+function MinimizeIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor">
+      <rect x="1" y="5.5" width="10" height="1.5" rx="0.75" />
+    </svg>
+  );
+}
+
+function MaximizeIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4">
+      <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+      <path d="M2 2l8 8M10 2L2 10" />
     </svg>
   );
 }

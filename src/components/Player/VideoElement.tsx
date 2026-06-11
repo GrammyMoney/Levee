@@ -1,31 +1,16 @@
-import { forwardRef } from 'react';
-import { VideoEventHandlers } from '../../hooks/useVideoPlayer';
-
-interface Props extends VideoEventHandlers {
-  src: string;
+interface Props {
   onClick: () => void;
 }
 
-const VideoElement = forwardRef<HTMLVideoElement, Props>(
-  ({ src, onClick, onPlay, onPause, onTimeUpdate, onDurationChange, onVolumeChange, onEnded }, ref) => {
-    return (
-      <video
-        ref={ref}
-        src={src}
-        className="w-full h-full object-contain"
-        onClick={onClick}
-        onPlay={onPlay}
-        onPause={onPause}
-        onTimeUpdate={onTimeUpdate}
-        onDurationChange={onDurationChange}
-        onVolumeChange={onVolumeChange}
-        onEnded={onEnded}
-        controls={false}
-        autoPlay
-      />
-    );
-  }
-);
-
-VideoElement.displayName = 'VideoElement';
-export default VideoElement;
+// Transparent click-catcher over the video region. mpv renders the actual video
+// into a DirectComposition surface *behind* the transparent WebView (Rust side),
+// so there's no <video> element here — just a surface to catch play/pause clicks.
+export default function VideoElement({ onClick }: Props) {
+  return (
+    <div
+      className="absolute inset-0"
+      style={{ background: 'transparent' }}
+      onClick={onClick}
+    />
+  );
+}
