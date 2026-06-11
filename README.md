@@ -64,6 +64,10 @@ Download the installer from [Releases](../../releases) and run it (per-user, no 
 
 **Other ideas:** Premiere extension to link proxies · archive / file-moving tools.
 
+## License
+
+Levee is free and open source under the **[AGPL-3.0-or-later](LICENSE)**. Use it, modify it, and even sell products built on it — just keep them open under the same license. See **[LICENSING.md](LICENSING.md)** for details and third-party component notes.
+
 ---
 
 <p align="center">Made with ♥ in Dallas, TX by Alex Bagheri</p>
