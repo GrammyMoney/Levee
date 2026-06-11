@@ -1,9 +1,5 @@
 # Levee Contributor License Agreement (Individual)
 
-> **Template — not legal advice.** This is adapted from the widely used Apache
-> Individual CLA, with an added relicensing grant so Levee can stay dual-licensable.
-> Have an attorney review it before relying on it.
-
 Thank you for contributing to Levee. This Contributor License Agreement
 ("Agreement") documents the rights granted by contributors to **Alex Bagheri**
 ("Owner"). It protects You as a contributor as well as the Owner and the project,
