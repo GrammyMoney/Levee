@@ -15,6 +15,11 @@
 
 It's designed to be your default player: double-click a file and it just plays.
 
+See it in action here:
+
+[<img width="1305" height="743" alt="image" src="https://github.com/user-attachments/assets/f97e2a5d-814c-4639-b90b-648f09d713e5" />](https://youtu.be/b8vrRwnM3BY?si=MZbf_BSAGCxb5ps7)
+
+
 ## Features
 
 - Linked proxy generation (quarter-res H.264), shared across the team
