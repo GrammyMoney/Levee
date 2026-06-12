@@ -1,20 +1,33 @@
 mod dcomp;
+mod file_commands;
+mod media_format;
+mod media_probe;
 mod mpv;
+mod process_tools;
+mod proxy_commands;
+mod proxy_paths;
+mod suite_commands;
+mod thumbnail_commands;
 
+use file_commands::{
+    get_file_size, get_sibling_files, list_directory, list_drives, open_folder, open_url,
+    pick_file, set_as_default_player,
+};
+use media_probe::get_probe_data;
+use proxy_commands::{
+    delete_proxy, generate_proxy, get_proxies_batch, get_proxies_root, get_proxy,
+};
+use rusqlite::{params, Connection};
+use serde::Serialize;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
-use rusqlite::{Connection, params};
-use serde::{Deserialize, Serialize};
+use suite_commands::{
+    precache_proxies_folder, set_suite_roots, suite_precache_add, suite_precache_list,
+    suite_precache_remove,
+};
 use tauri::{Emitter, Manager};
-use tauri_plugin_dialog::DialogExt;
-use tauri_plugin_opener::OpenerExt;
-
-const MEDIA_EXTENSIONS: &[&str] = &[
-    "mp4", "mov", "mxf", "mkv", "avi", "webm",
-    "mp3", "wav", "aiff", "aac", "flac", "ogg",
-    "jpg", "jpeg", "png", "tiff", "tif", "webp",
-];
+use thumbnail_commands::get_thumbnail;
 
 // Schema for levee.db — lives at {drive_root}\Levee\levee.db on Suite drives,
 // or the app-local fallback DB for non-Suite drives.
@@ -72,6 +85,49 @@ impl DbPool {
 
 struct AppState(Mutex<DbPool>);
 
+impl AppState {
+    pub(crate) fn set_suite_roots(&self, roots: Vec<String>) {
+        self.0.lock().unwrap().suite_roots = roots;
+    }
+
+    pub(crate) fn record_proxy(&self, original_path: &str, proxy_path: &str) {
+        let mut pool = self.0.lock().unwrap();
+        let db = pool.db_for(Path::new(original_path));
+        let _ = db.execute(
+            "INSERT INTO proxies (original_path, proxy_path)
+             VALUES (?1, ?2)
+             ON CONFLICT(original_path) DO UPDATE SET
+               proxy_path = excluded.proxy_path,
+               created_at = strftime('%s','now')",
+            params![original_path, proxy_path],
+        );
+    }
+
+    pub(crate) fn delete_proxy_record(&self, original_path: &str) -> Result<(), String> {
+        let mut pool = self.0.lock().unwrap();
+        let db = pool.db_for(Path::new(original_path));
+        db.execute(
+            "DELETE FROM proxies WHERE original_path = ?1",
+            [original_path],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub(crate) fn record_thumbnail(&self, original_path: &str, thumbnail_path: &str) {
+        let mut pool = self.0.lock().unwrap();
+        let db = pool.db_for(Path::new(original_path));
+        let _ = db.execute(
+            "INSERT INTO thumbnails (original_path, thumbnail_path)
+             VALUES (?1, ?2)
+             ON CONFLICT(original_path) DO UPDATE SET
+               thumbnail_path = excluded.thumbnail_path,
+               created_at = strftime('%s','now')",
+            params![original_path, thumbnail_path],
+        );
+    }
+}
+
 /// Holds the live libmpv handle for control commands.
 struct MpvState {
     handle: mpv::Handle,
@@ -82,70 +138,20 @@ struct MpvState {
 struct PendingOpen(Mutex<Option<String>>);
 
 fn norm_path(p: &str) -> String {
-    p.to_lowercase().replace('/', "\\").trim_end_matches('\\').to_string() + "\\"
+    p.to_lowercase()
+        .replace('/', "\\")
+        .trim_end_matches('\\')
+        .to_string()
+        + "\\"
 }
 
 /// Returns the Windows drive root (e.g. "C:\\") for a path, or None on non-Windows paths.
 fn drive_root_of(path: &Path) -> Option<String> {
     use std::path::Component;
     match path.components().next() {
-        Some(Component::Prefix(p)) => {
-            Some(format!("{}\\", p.as_os_str().to_string_lossy()))
-        }
+        Some(Component::Prefix(p)) => Some(format!("{}\\", p.as_os_str().to_string_lossy())),
         _ => None,
     }
-}
-
-// ── File utilities ────────────────────────────────────────────────────────────
-
-#[tauri::command]
-fn pick_file(app: tauri::AppHandle) -> Option<String> {
-    app.dialog()
-        .file()
-        .blocking_pick_file()
-        .and_then(|f| f.into_path().ok())
-        .map(|p| p.to_string_lossy().into_owned())
-}
-
-#[tauri::command]
-fn get_sibling_files(path: String) -> Vec<String> {
-    let p = Path::new(&path);
-    let dir = match p.parent() {
-        Some(d) => d,
-        None => return vec![],
-    };
-    let mut files: Vec<String> = std::fs::read_dir(dir)
-        .ok()
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
-        .filter_map(|e| {
-            let name = e.file_name();
-            let ext = Path::new(&name).extension()?.to_str()?.to_lowercase();
-            if MEDIA_EXTENSIONS.contains(&ext.as_str()) {
-                Some(e.path().to_string_lossy().into_owned())
-            } else {
-                None
-            }
-        })
-        .collect();
-    files.sort();
-    files
-}
-
-#[tauri::command]
-fn get_file_size(path: String) -> u64 {
-    std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0)
-}
-
-#[tauri::command]
-fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    let dir = Path::new(&path)
-        .parent()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or(path);
-    app.opener().open_path(dir, None::<&str>).map_err(|e| e.to_string())
 }
 
 /// Returns (and clears) the file the app was launched with, if any.
@@ -154,679 +160,6 @@ fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
 fn take_launch_file(pending: tauri::State<PendingOpen>) -> Option<String> {
     pending.0.lock().unwrap().take()
 }
-
-/// Opens the Windows "Default apps" settings so the user can make Levee the
-/// default handler for video files. Win10/11 require the user to confirm the
-/// choice there — an app can't silently set itself as default.
-#[tauri::command]
-fn set_as_default_player() -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        use windows::core::{w, HSTRING};
-        use windows::Win32::UI::Shell::ShellExecuteW;
-        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        let uri = HSTRING::from("ms-settings:defaultapps");
-        let r = unsafe { ShellExecuteW(None, w!("open"), &uri, None, None, SW_SHOWNORMAL) };
-        // ShellExecuteW returns an HINSTANCE; a value <= 32 means failure.
-        if (r.0 as isize) <= 32 {
-            return Err("failed to open Default apps settings".into());
-        }
-        Ok(())
-    }
-    #[cfg(not(windows))]
-    {
-        Err("only available on Windows".into())
-    }
-}
-
-/// Opens a URL in the user's default browser.
-#[tauri::command]
-fn open_url(url: String) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        use windows::core::{w, HSTRING};
-        use windows::Win32::UI::Shell::ShellExecuteW;
-        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        let u = HSTRING::from(url);
-        let r = unsafe { ShellExecuteW(None, w!("open"), &u, None, None, SW_SHOWNORMAL) };
-        if (r.0 as isize) <= 32 {
-            return Err("failed to open URL".into());
-        }
-        Ok(())
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = url;
-        Err("only available on Windows".into())
-    }
-}
-
-// ── ffprobe metadata ──────────────────────────────────────────────────────────
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct ProbeData {
-    pub codec: String,
-    pub width: u32,
-    pub height: u32,
-    pub frame_rate: String,
-    pub bit_rate: String,
-    pub duration_secs: f64,
-    pub timecode: String,
-    pub container: String,
-    pub audio_codec: String,
-    pub audio_channels: u32,
-    pub file_size: String,
-    pub color_space: String,
-}
-
-/// Build a process Command that does NOT flash a console window on Windows.
-/// (CREATE_NO_WINDOW = 0x08000000.) Used for every external tool we spawn.
-fn quiet_command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
-    let cmd = std::process::Command::new(program);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        let mut cmd = cmd;
-        cmd.creation_flags(0x0800_0000);
-        return cmd;
-    }
-    #[cfg(not(windows))]
-    cmd
-}
-
-/// Resolve the `ffmpeg` executable. Prefers the bundled sidecar shipped next to
-/// the app exe, then common install locations (winget's shim dir), then PATH.
-fn resolve_ffmpeg() -> String {
-    // Bundled sidecar (externalBin): lands next to the exe as `ffmpeg.exe`.
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let sidecar = dir.join(if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" });
-            if sidecar.exists() {
-                return sidecar.to_string_lossy().into_owned();
-            }
-        }
-    }
-    #[cfg(windows)]
-    {
-        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-            let shim = Path::new(&local)
-                .join("Microsoft").join("WinGet").join("Links").join("ffmpeg.exe");
-            if shim.exists() { return shim.to_string_lossy().into_owned(); }
-        }
-        for c in [
-            r"C:\ffmpeg\bin\ffmpeg.exe",
-            r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
-        ] {
-            if Path::new(c).exists() { return c.to_string(); }
-        }
-    }
-    "ffmpeg".to_string()
-}
-
-/// Locate the bundled ffprobe sidecar. In dev mode falls back to PATH.
-fn ffprobe_binary(app: &tauri::AppHandle) -> PathBuf {
-    // In a Tauri bundle, sidecars land next to the main executable.
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let candidate = dir.join(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" });
-            if candidate.exists() {
-                return candidate;
-            }
-        }
-    }
-    // Also check resource_dir (dev builds)
-    if let Ok(res) = app.path().resource_dir() {
-        let candidate = res.join(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" });
-        if candidate.exists() {
-            return candidate;
-        }
-    }
-    PathBuf::from(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" })
-}
-
-fn format_bitrate(bps: u64) -> String {
-    if bps >= 1_000_000 {
-        format!("{:.1} Mbps", bps as f64 / 1_000_000.0)
-    } else if bps >= 1_000 {
-        format!("{:.0} Kbps", bps as f64 / 1_000.0)
-    } else {
-        format!("{bps} bps")
-    }
-}
-
-fn format_bytes(bytes: u64) -> String {
-    if bytes >= 1_073_741_824 {
-        format!("{:.2} GB", bytes as f64 / 1_073_741_824.0)
-    } else if bytes >= 1_048_576 {
-        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
-    } else if bytes >= 1_024 {
-        format!("{:.1} KB", bytes as f64 / 1_024.0)
-    } else {
-        format!("{bytes} B")
-    }
-}
-
-fn parse_frame_rate(s: &str) -> String {
-    let parts: Vec<&str> = s.split('/').collect();
-    if parts.len() == 2 {
-        if let (Ok(num), Ok(den)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>()) {
-            if den > 0.0 {
-                let fps = num / den;
-                // Common fractional frame rates
-                let rounded = (fps * 1000.0).round() / 1000.0;
-                return format!("{rounded:.3}").trim_end_matches('0').trim_end_matches('.').to_string() + " fps";
-            }
-        }
-    }
-    s.to_string()
-}
-
-fn pretty_codec(raw: &str) -> String {
-    match raw.to_lowercase().as_str() {
-        "h264" | "libx264"  => "H.264".to_string(),
-        "h265" | "hevc" | "libx265" => "H.265 (HEVC)".to_string(),
-        "prores"            => "Apple ProRes".to_string(),
-        "dnxhd"             => "Avid DNxHD".to_string(),
-        "vp9"               => "VP9".to_string(),
-        "av1"               => "AV1".to_string(),
-        "mpeg2video"        => "MPEG-2".to_string(),
-        "mjpeg"             => "MJPEG".to_string(),
-        "aac"               => "AAC".to_string(),
-        "mp3"               => "MP3".to_string(),
-        "pcm_s16le" | "pcm_s24le" | "pcm_s32le" => "PCM".to_string(),
-        other               => other.to_uppercase(),
-    }
-}
-
-fn pretty_container(fmt_name: &str) -> String {
-    let first = fmt_name.split(',').next().unwrap_or(fmt_name);
-    match first {
-        "mov"        => "MOV".to_string(),
-        "mp4"        => "MP4".to_string(),
-        "matroska"   => "MKV".to_string(),
-        "avi"        => "AVI".to_string(),
-        "mxf"        => "MXF".to_string(),
-        "webm"       => "WebM".to_string(),
-        other        => other.to_uppercase(),
-    }
-}
-
-#[tauri::command]
-fn get_probe_data(app: tauri::AppHandle, path: String) -> Result<ProbeData, String> {
-    let ffprobe = ffprobe_binary(&app);
-    let output = quiet_command(&ffprobe)
-        .args([
-            "-v", "quiet",
-            "-print_format", "json",
-            "-show_streams",
-            "-show_format",
-            &path,
-        ])
-        .output()
-        .map_err(|e| format!("Failed to run ffprobe: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("ffprobe error: {stderr}"));
-    }
-
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("Failed to parse ffprobe output: {e}"))?;
-
-    let streams = json["streams"].as_array().cloned().unwrap_or_default();
-    let format = &json["format"];
-
-    // Find first video stream
-    let video = streams.iter().find(|s| s["codec_type"].as_str() == Some("video"));
-    // Find first audio stream
-    let audio = streams.iter().find(|s| s["codec_type"].as_str() == Some("audio"));
-
-    let codec = video
-        .and_then(|v| v["codec_name"].as_str())
-        .map(pretty_codec)
-        .unwrap_or_else(|| "—".to_string());
-
-    let width  = video.and_then(|v| v["width"].as_u64()).unwrap_or(0)  as u32;
-    let height = video.and_then(|v| v["height"].as_u64()).unwrap_or(0) as u32;
-
-    let frame_rate = video
-        .and_then(|v| v["r_frame_rate"].as_str())
-        .map(parse_frame_rate)
-        .unwrap_or_else(|| "—".to_string());
-
-    // Prefer stream bit_rate, fall back to format bit_rate
-    let bps = video
-        .and_then(|v| v["bit_rate"].as_str().and_then(|s| s.parse::<u64>().ok()))
-        .or_else(|| format["bit_rate"].as_str().and_then(|s| s.parse::<u64>().ok()))
-        .unwrap_or(0);
-    let bit_rate = if bps > 0 { format_bitrate(bps) } else { "—".to_string() };
-
-    let duration_secs = format["duration"]
-        .as_str()
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(0.0);
-
-    // Timecode: check stream tags → format tags → derive from duration
-    let timecode = video
-        .and_then(|v| v["tags"]["timecode"].as_str())
-        .or_else(|| format["tags"]["timecode"].as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            let h = (duration_secs / 3600.0) as u32;
-            let m = ((duration_secs % 3600.0) / 60.0) as u32;
-            let s = (duration_secs % 60.0) as u32;
-            format!("{h:02}:{m:02}:{s:02}:00")
-        });
-
-    let container = format["format_name"]
-        .as_str()
-        .map(pretty_container)
-        .unwrap_or_else(|| "—".to_string());
-
-    let audio_codec = audio
-        .and_then(|a| a["codec_name"].as_str())
-        .map(pretty_codec)
-        .unwrap_or_else(|| "—".to_string());
-
-    let audio_channels = audio
-        .and_then(|a| a["channels"].as_u64())
-        .unwrap_or(0) as u32;
-
-    let file_size = std::fs::metadata(&path)
-        .map(|m| format_bytes(m.len()))
-        .unwrap_or_else(|_| "—".to_string());
-
-    let color_space = video
-        .and_then(|v| v["color_space"].as_str())
-        .unwrap_or("—")
-        .to_string();
-
-    Ok(ProbeData {
-        codec,
-        width,
-        height,
-        frame_rate,
-        bit_rate,
-        duration_secs,
-        timecode,
-        container,
-        audio_codec,
-        audio_channels,
-        file_size,
-        color_space,
-    })
-}
-
-// ── Proxy path helpers ────────────────────────────────────────────────────────
-
-/// FNV-1a 64-bit hash — deterministic across runs and machines.
-fn fnv1a(s: &str) -> u64 {
-    let mut h: u64 = 14695981039346656037;
-    for b in s.bytes() {
-        h ^= b as u64;
-        h = h.wrapping_mul(1099511628211);
-    }
-    h
-}
-
-/// Normalize a path for hashing: lowercase, backslashes → forward slashes.
-fn norm_for_hash(path: &Path) -> String {
-    path.to_string_lossy().to_lowercase().replace('\\', "/")
-}
-
-/// Returns `{drive_root}\Levee\Proxies` for the drive containing `original`.
-fn proxies_root_for(original: &Path) -> Result<PathBuf, String> {
-    use std::path::Component;
-    match original.components().next() {
-        Some(Component::Prefix(p)) => {
-            let root = PathBuf::from(format!("{}\\", p.as_os_str().to_string_lossy()));
-            Ok(root.join("Levee").join("Proxies"))
-        }
-        _ => Err(format!("Cannot determine drive root for: {}", original.display())),
-    }
-}
-
-/// Returns `{drive_root}\Levee\Thumbnails` for the drive containing `original`.
-fn thumbnails_root_for(original: &Path) -> Result<PathBuf, String> {
-    use std::path::Component;
-    match original.components().next() {
-        Some(Component::Prefix(p)) => {
-            let root = PathBuf::from(format!("{}\\", p.as_os_str().to_string_lossy()));
-            Ok(root.join("Levee").join("Thumbnails"))
-        }
-        _ => Err(format!("Cannot determine drive root for: {}", original.display())),
-    }
-}
-
-/// Deterministic hashed path for a proxy.
-/// `{drive_root}\Levee\Proxies\{xx}\{yy}\{hash16}.mp4`
-fn proxy_path_for(original: &Path) -> Result<PathBuf, String> {
-    let root = proxies_root_for(original)?;
-    let hash = format!("{:016x}", fnv1a(&norm_for_hash(original)));
-    Ok(root.join(&hash[0..2]).join(&hash[2..4]).join(format!("{hash}.mp4")))
-}
-
-/// Deterministic hashed path for a thumbnail.
-/// `{drive_root}\Levee\Thumbnails\{xx}\{yy}\{hash16}.jpg`
-fn thumbnail_path_for(original: &Path) -> Result<PathBuf, String> {
-    let root = thumbnails_root_for(original)?;
-    let hash = format!("{:016x}", fnv1a(&norm_for_hash(original)));
-    Ok(root.join(&hash[0..2]).join(&hash[2..4]).join(format!("{hash}.jpg")))
-}
-
-// ── Proxy commands ────────────────────────────────────────────────────────────
-
-/// Returns the proxy path if the proxy file exists on disk.
-/// Path is fully deterministic — no DB query needed.
-#[tauri::command]
-fn get_proxy(original_path: String) -> Option<String> {
-    let path = proxy_path_for(Path::new(&original_path)).ok()?;
-    if path.exists() { Some(path.to_string_lossy().into_owned()) } else { None }
-}
-
-/// Batch proxy lookup — returns map of original_path → proxy_path for files
-/// whose proxy file exists on disk.  DB-free: just checks computed paths.
-#[tauri::command]
-fn get_proxies_batch(file_paths: Vec<String>) -> HashMap<String, String> {
-    file_paths.into_iter().filter_map(|orig| {
-        let proxy = proxy_path_for(Path::new(&orig)).ok()?;
-        if proxy.exists() { Some((orig, proxy.to_string_lossy().into_owned())) } else { None }
-    }).collect()
-}
-
-#[tauri::command]
-async fn generate_proxy(
-    state: tauri::State<'_, AppState>,
-    original_path: String,
-) -> Result<String, String> {
-    let proxy_pb  = proxy_path_for(Path::new(&original_path))?;
-    let proxy_str = proxy_pb.to_string_lossy().into_owned();
-
-    // Return immediately if proxy already exists
-    if proxy_pb.exists() { return Ok(proxy_str); }
-
-    // Ensure bucket directory exists
-    if let Some(dir) = proxy_pb.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-
-    let orig  = original_path.clone();
-    let proxy = proxy_str.clone();
-    let ffmpeg = resolve_ffmpeg();
-
-    let out = tauri::async_runtime::spawn_blocking(move || {
-        quiet_command(&ffmpeg)
-            .args([
-                "-i",        &orig,
-                "-vf",       "scale=trunc(iw/4)*2:trunc(ih/4)*2",
-                "-c:v",      "libx264",
-                "-crf",      "23",
-                "-preset",   "fast",
-                "-pix_fmt",  "yuv420p",
-                "-movflags", "+faststart",
-                "-c:a",      "aac",
-                "-b:a",      "128k",
-                "-y",        &proxy,
-            ])
-            .output()
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| format!("Failed to launch ffmpeg: {e}"))?;
-
-    if !out.status.success() {
-        return Err(format!("ffmpeg error: {}", String::from_utf8_lossy(&out.stderr)));
-    }
-
-    // Write to DB for auditing / shared discovery on Suite drives
-    {
-        let mut pool = state.0.lock().unwrap();
-        let db = pool.db_for(Path::new(&original_path));
-        let _ = db.execute(
-            "INSERT INTO proxies (original_path, proxy_path)
-             VALUES (?1, ?2)
-             ON CONFLICT(original_path) DO UPDATE SET
-               proxy_path = excluded.proxy_path,
-               created_at = strftime('%s','now')",
-            params![original_path, proxy_str],
-        );
-    }
-
-    Ok(proxy_str)
-}
-
-/// Deletes the proxy file and removes its DB record.
-#[tauri::command]
-fn delete_proxy(state: tauri::State<AppState>, original_path: String) -> Result<(), String> {
-    let proxy_pb = proxy_path_for(Path::new(&original_path))?;
-    let _ = std::fs::remove_file(&proxy_pb);
-    let mut pool = state.0.lock().unwrap();
-    let db = pool.db_for(Path::new(&original_path));
-    db.execute("DELETE FROM proxies WHERE original_path = ?1", [&original_path])
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-fn get_proxies_root(original_path: String) -> Result<String, String> {
-    proxies_root_for(Path::new(&original_path))
-        .map(|p| p.to_string_lossy().into_owned())
-}
-
-// ── Directory listing ─────────────────────────────────────────────────────────
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DirListing {
-    pub path: String,
-    pub parent_path: Option<String>,
-    pub subdirs: Vec<String>,
-    pub media_files: Vec<String>,
-}
-
-#[tauri::command]
-fn list_directory(path: String) -> Result<DirListing, String> {
-    let dir = Path::new(&path);
-    if !dir.is_dir() {
-        return Err(format!("Not a directory: {path}"));
-    }
-
-    let parent_path = dir.parent().map(|p| p.to_string_lossy().into_owned());
-
-    let mut subdirs: Vec<String> = vec![];
-    let mut media_files: Vec<String> = vec![];
-
-    let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
-    for entry in entries.filter_map(|e| e.ok()) {
-        let ft = match entry.file_type() {
-            Ok(ft) => ft,
-            Err(_) => continue,
-        };
-        let full = entry.path().to_string_lossy().into_owned();
-        if ft.is_dir() {
-            subdirs.push(full);
-        } else if ft.is_file() {
-            let ext = entry.path()
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|e| e.to_lowercase())
-                .unwrap_or_default();
-            if MEDIA_EXTENSIONS.contains(&ext.as_str()) {
-                media_files.push(full);
-            }
-        }
-    }
-
-    subdirs.sort();
-    media_files.sort();
-
-    Ok(DirListing { path, parent_path, subdirs, media_files })
-}
-
-// ── Suite commands ────────────────────────────────────────────────────────────
-
-fn run_suite_cmd(args: &[&str]) -> std::io::Result<std::process::Output> {
-    quiet_command("suite").args(args).output()
-}
-
-/// Updates the in-memory list of Suite roots used for DB routing.
-#[tauri::command]
-fn set_suite_roots(state: tauri::State<AppState>, roots: Vec<String>) {
-    let mut pool = state.0.lock().unwrap();
-    pool.suite_roots = roots;
-}
-
-#[tauri::command]
-fn suite_precache_add(paths: Vec<String>) -> Result<String, String> {
-    let mut lines = vec![];
-    for path in &paths {
-        let out = run_suite_cmd(&["pre-cache", "add", "--path", path])
-            .map_err(|e| e.to_string())?;
-        if !out.status.success() {
-            return Err(format!("suite pre-cache add failed: {}",
-                String::from_utf8_lossy(&out.stderr)));
-        }
-        lines.push(String::from_utf8_lossy(&out.stdout).into_owned());
-    }
-    Ok(lines.join("\n"))
-}
-
-#[tauri::command]
-fn suite_precache_remove(paths: Vec<String>) -> Result<String, String> {
-    let mut lines = vec![];
-    for path in &paths {
-        let out = run_suite_cmd(&["pre-cache", "remove", "--path", path])
-            .map_err(|e| e.to_string())?;
-        if !out.status.success() {
-            return Err(format!("suite pre-cache remove failed: {}",
-                String::from_utf8_lossy(&out.stderr)));
-        }
-        lines.push(String::from_utf8_lossy(&out.stdout).into_owned());
-    }
-    Ok(lines.join("\n"))
-}
-
-#[tauri::command]
-fn suite_precache_list() -> Result<Vec<String>, String> {
-    let out = run_suite_cmd(&["pre-cache", "list"]).map_err(|e| e.to_string())?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    let json: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("Failed to parse suite output: {e}\nRaw: {text}"))?;
-    let entries = json["PreCacheEntries"]
-        .as_array()
-        .ok_or_else(|| format!("Unexpected JSON structure: {text}"))?;
-    let paths = entries
-        .iter()
-        .filter_map(|entry| {
-            let p = entry["Path"].as_str()?;
-            Some(p.trim_start_matches('/').replace('/', "\\"))
-        })
-        .collect();
-    Ok(paths)
-}
-
-/// Extracts a single thumbnail frame from a video file using ffmpeg.
-/// Stored at `{drive_root}\Levee\Thumbnails\{xx}\{yy}\{hash16}.jpg`.
-/// Returns immediately if the file already exists (no ffmpeg needed).
-#[tauri::command]
-async fn get_thumbnail(
-    state: tauri::State<'_, AppState>,
-    original_path: String,
-) -> Result<String, String> {
-    let path  = Path::new(&original_path);
-    let thumb = thumbnail_path_for(path)?;
-    let thumb_str = thumb.to_string_lossy().into_owned();
-
-    // Fast path: already generated
-    if thumb.exists() {
-        return Ok(thumb_str);
-    }
-
-    // Create bucket dirs
-    if let Some(dir) = thumb.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-
-    let orig  = original_path.clone();
-    let dest  = thumb_str.clone();
-    let ffmpeg = resolve_ffmpeg();
-
-    let out = tauri::async_runtime::spawn_blocking(move || {
-        quiet_command(&ffmpeg)
-            .args([
-                "-ss", "00:00:03",
-                "-i", &orig,
-                "-vframes", "1",
-                "-vf", "scale=320:-2",
-                "-q:v", "5",
-                "-y", &dest,
-            ])
-            .output()
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| format!("Failed to launch ffmpeg: {e}"))?;
-
-    if !out.status.success() || !thumb.exists() {
-        return Err(String::from_utf8_lossy(&out.stderr)
-            .lines().last().unwrap_or("ffmpeg failed").to_string());
-    }
-
-    // Write to DB for shared discovery on Suite drives
-    {
-        let mut pool = state.0.lock().unwrap();
-        let db = pool.db_for(path);
-        let _ = db.execute(
-            "INSERT INTO thumbnails (original_path, thumbnail_path)
-             VALUES (?1, ?2)
-             ON CONFLICT(original_path) DO UPDATE SET
-               thumbnail_path = excluded.thumbnail_path,
-               created_at = strftime('%s','now')",
-            params![original_path, thumb_str],
-        );
-    }
-
-    Ok(thumb_str)
-}
-
-/// Returns all mounted drive roots (Windows: A:\–Z:\; macOS: /Volumes/*).
-#[tauri::command]
-fn list_drives() -> Vec<String> {
-    #[cfg(target_os = "windows")]
-    {
-        ('A'..='Z')
-            .filter_map(|c| {
-                let path = format!("{}:\\", c);
-                if std::path::Path::new(&path).exists() { Some(path) } else { None }
-            })
-            .collect()
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let mut drives = vec!["/".to_string()];
-        if let Ok(entries) = std::fs::read_dir("/Volumes") {
-            for entry in entries.flatten() {
-                drives.push(entry.path().to_string_lossy().into_owned());
-            }
-        }
-        drives
-    }
-}
-
-/// Tells Suite to pre-cache the `Levee\Proxies` folder on the same drive as the file.
-#[tauri::command]
-fn precache_proxies_folder(original_path: String) -> Result<(), String> {
-    let root = proxies_root_for(Path::new(&original_path))?;
-    if !root.exists() { return Ok(()); }
-    let path_str = root.to_string_lossy().into_owned();
-    let out = run_suite_cmd(&["pre-cache", "add", "--path", &path_str])
-        .map_err(|e| e.to_string())?;
-    if out.status.success() { Ok(()) } else {
-        Err(String::from_utf8_lossy(&out.stderr).into_owned())
-    }
-}
-
 
 // ── mpv playback state + control plane ──────────────────────────────────────
 
@@ -861,7 +194,11 @@ fn start_mpv_event_thread(handle: mpv::Handle, app: tauri::AppHandle) {
     handle.observe_double(OBS_VOLUME, "volume");
 
     std::thread::spawn(move || {
-        let mut state = MpvPlayerState { volume: 100.0, speed: 1.0, ..Default::default() };
+        let mut state = MpvPlayerState {
+            volume: 100.0,
+            speed: 1.0,
+            ..Default::default()
+        };
         loop {
             let ev = unsafe { handle.wait_event(0.5) };
             if ev.is_null() {
@@ -884,8 +221,12 @@ fn start_mpv_event_thread(handle: mpv::Handle, app: tauri::AppHandle) {
                         OBS_DURATION => state.duration = unsafe { *(prop.data as *const f64) },
                         OBS_SPEED => state.speed = unsafe { *(prop.data as *const f64) },
                         OBS_VOLUME => state.volume = unsafe { *(prop.data as *const f64) },
-                        OBS_PAUSE => state.paused = unsafe { *(prop.data as *const std::ffi::c_int) } != 0,
-                        OBS_EOF => state.eof = unsafe { *(prop.data as *const std::ffi::c_int) } != 0,
+                        OBS_PAUSE => {
+                            state.paused = unsafe { *(prop.data as *const std::ffi::c_int) } != 0
+                        }
+                        OBS_EOF => {
+                            state.eof = unsafe { *(prop.data as *const std::ffi::c_int) } != 0
+                        }
                         _ => continue,
                     }
                     let _ = app.emit("mpv-state", state.clone());
@@ -904,76 +245,123 @@ fn mpv_handle(state: &tauri::State<MpvState>) -> mpv::Handle {
 #[tauri::command]
 fn mpv_load(state: tauri::State<MpvState>, path: String) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).command(&["loadfile", &path]) }
+    {
+        mpv_handle(&state).command(&["loadfile", &path])
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, path); Err("mpv only available on Windows".into()) }
+    {
+        let _ = (&state, path);
+        Err("mpv only available on Windows".into())
+    }
 }
 
 #[tauri::command]
 fn mpv_set_pause(state: tauri::State<MpvState>, paused: bool) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).set_flag("pause", paused) }
+    {
+        mpv_handle(&state).set_flag("pause", paused)
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, paused); Ok(()) }
+    {
+        let _ = (&state, paused);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_seek(state: tauri::State<MpvState>, time: f64) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).command(&["seek", &time.to_string(), "absolute"]) }
+    {
+        mpv_handle(&state).command(&["seek", &time.to_string(), "absolute"])
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, time); Ok(()) }
+    {
+        let _ = (&state, time);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_seek_by(state: tauri::State<MpvState>, delta: f64) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).command(&["seek", &delta.to_string(), "relative"]) }
+    {
+        mpv_handle(&state).command(&["seek", &delta.to_string(), "relative"])
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, delta); Ok(()) }
+    {
+        let _ = (&state, delta);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_frame_step(state: tauri::State<MpvState>, direction: i32) -> Result<(), String> {
     #[cfg(windows)]
     {
-        let cmd = if direction >= 0 { "frame-step" } else { "frame-back-step" };
+        let cmd = if direction >= 0 {
+            "frame-step"
+        } else {
+            "frame-back-step"
+        };
         mpv_handle(&state).command(&[cmd])
     }
     #[cfg(not(windows))]
-    { let _ = (&state, direction); Ok(()) }
+    {
+        let _ = (&state, direction);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_set_volume(state: tauri::State<MpvState>, volume: f64) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).set_double("volume", volume.clamp(0.0, 130.0)) }
+    {
+        mpv_handle(&state).set_double("volume", volume.clamp(0.0, 130.0))
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, volume); Ok(()) }
+    {
+        let _ = (&state, volume);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_set_mute(state: tauri::State<MpvState>, muted: bool) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).set_flag("mute", muted) }
+    {
+        mpv_handle(&state).set_flag("mute", muted)
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, muted); Ok(()) }
+    {
+        let _ = (&state, muted);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_set_speed(state: tauri::State<MpvState>, speed: f64) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).set_double("speed", speed) }
+    {
+        mpv_handle(&state).set_double("speed", speed)
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, speed); Ok(()) }
+    {
+        let _ = (&state, speed);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_set_loop(state: tauri::State<MpvState>, looping: bool) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).set_string("loop-file", if looping { "inf" } else { "no" }) }
+    {
+        mpv_handle(&state).set_string("loop-file", if looping { "inf" } else { "no" })
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, looping); Ok(()) }
+    {
+        let _ = (&state, looping);
+        Ok(())
+    }
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -998,7 +386,8 @@ pub fn run() {
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
-            let file_args: Vec<String> = argv.into_iter()
+            let file_args: Vec<String> = argv
+                .into_iter()
                 .skip(1)
                 .filter(|a| !a.starts_with("--") && Path::new(a.as_str()).exists())
                 .collect();
@@ -1011,19 +400,22 @@ pub fn run() {
         .setup(|app| {
             // Explicitly (re)apply the window icon so the taskbar uses the
             // current branded icon regardless of what got embedded at build time.
-            if let (Some(win), Some(icon)) =
-                (app.get_webview_window("main"), app.default_window_icon().cloned())
-            {
+            if let (Some(win), Some(icon)) = (
+                app.get_webview_window("main"),
+                app.default_window_icon().cloned(),
+            ) {
                 let _ = win.set_icon(icon);
             }
 
-            let data_dir = app.path().app_data_dir()
+            let data_dir = app
+                .path()
+                .app_data_dir()
                 .expect("failed to resolve app data dir");
             std::fs::create_dir_all(&data_dir)?;
             let local_db_path = data_dir.join("levee.db");
-            let local = Connection::open(&local_db_path)
-                .expect("failed to open local database");
-            local.execute_batch(SCHEMA)
+            let local = Connection::open(&local_db_path).expect("failed to open local database");
+            local
+                .execute_batch(SCHEMA)
                 .expect("failed to run schema migration");
 
             app.manage(AppState(Mutex::new(DbPool {
@@ -1043,13 +435,16 @@ pub fn run() {
                         app.manage(MpvState { handle });
                         if let Some(win) = app.get_webview_window("main") {
                             let hwnd = win.hwnd().expect("main HWND").0 as isize;
-                            let size = win.inner_size().unwrap_or(tauri::PhysicalSize::new(1280, 720));
+                            let size = win
+                                .inner_size()
+                                .unwrap_or(tauri::PhysicalSize::new(1280, 720));
 
                             // Shared latest-window-size; the render thread resizes
                             // its swapchain to match when this changes.
-                            let resize = std::sync::Arc::new(AtomicU64::new(
-                                dcomp::pack_size(size.width, size.height),
-                            ));
+                            let resize = std::sync::Arc::new(AtomicU64::new(dcomp::pack_size(
+                                size.width,
+                                size.height,
+                            )));
                             dcomp::start(hwnd, size.width, size.height, handle, resize.clone());
 
                             // Push physical-pixel size changes to the render thread.

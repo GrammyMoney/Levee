@@ -22,7 +22,9 @@ export default function ContextMenu({ x, y, items, onClose }: Props) {
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onKey);
     return () => {
@@ -54,7 +56,10 @@ export default function ContextMenu({ x, y, items, onClose }: Props) {
           <button
             key={i}
             disabled={item.disabled}
-            onClick={() => { item.onClick(); onClose(); }}
+            onClick={() => {
+              item.onClick();
+              onClose();
+            }}
             className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
               item.disabled
                 ? 'text-white/25 cursor-default'

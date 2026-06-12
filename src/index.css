@@ -1,10 +1,14 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   margin: 0;
   padding: 0;
   width: 100vw;
@@ -19,7 +23,9 @@ html, body, #root {
 }
 
 .chrome {
-  transition: opacity 300ms ease, pointer-events 0s;
+  transition:
+    opacity 300ms ease,
+    pointer-events 0s;
 }
 .chrome-hidden {
   opacity: 0;
@@ -36,18 +42,18 @@ html, body, #root {
   -webkit-backdrop-filter: blur(12px);
 }
 
-input[type="range"] {
+input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
   background: transparent;
   cursor: pointer;
 }
-input[type="range"]::-webkit-slider-runnable-track {
-  background: rgba(255,255,255,0.25);
+input[type='range']::-webkit-slider-runnable-track {
+  background: rgba(255, 255, 255, 0.25);
   border-radius: 9999px;
   height: 4px;
 }
-input[type="range"]::-webkit-slider-thumb {
+input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 12px;

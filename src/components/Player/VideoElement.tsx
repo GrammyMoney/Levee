@@ -7,10 +7,6 @@ interface Props {
 // so there's no <video> element here — just a surface to catch play/pause clicks.
 export default function VideoElement({ onClick }: Props) {
   return (
-    <div
-      className="absolute inset-0"
-      style={{ background: 'transparent' }}
-      onClick={onClick}
-    />
+    <div className="absolute inset-0" style={{ background: 'transparent' }} onClick={onClick} />
   );
 }
