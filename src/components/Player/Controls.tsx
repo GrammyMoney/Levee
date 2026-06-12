@@ -25,7 +25,13 @@ function formatTimecode(s: number): string {
   return `${m}:${sec.toString().padStart(2, '0')}.${tenth}`;
 }
 
-export default function Controls({ state, controls, visible, metaPanelOpen, onToggleMetadata }: Props) {
+export default function Controls({
+  state,
+  controls,
+  visible,
+  metaPanelOpen,
+  onToggleMetadata,
+}: Props) {
   const { currentTime, duration, volume, isMuted, playbackRate, isLooping, isPlaying } = state;
   const { seek, setVolume, setPlaybackRate, toggleLoop, toggle } = controls;
 
@@ -38,12 +44,15 @@ export default function Controls({ state, controls, visible, metaPanelOpen, onTo
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const remaining = duration > 0 ? duration - currentTime : 0;
 
-  const getTimeFromClientX = useCallback((clientX: number) => {
-    const bar = barRef.current;
-    if (!bar || duration === 0) return 0;
-    const rect = bar.getBoundingClientRect();
-    return Math.max(0, Math.min(duration, ((clientX - rect.left) / rect.width) * duration));
-  }, [duration]);
+  const getTimeFromClientX = useCallback(
+    (clientX: number) => {
+      const bar = barRef.current;
+      if (!bar || duration === 0) return 0;
+      const rect = bar.getBoundingClientRect();
+      return Math.max(0, Math.min(duration, ((clientX - rect.left) / rect.width) * duration));
+    },
+    [duration],
+  );
 
   const onBarMouseMove = (e: React.MouseEvent) => {
     const bar = barRef.current;
@@ -72,7 +81,10 @@ export default function Controls({ state, controls, visible, metaPanelOpen, onTo
 
   useEffect(() => {
     if (!showVolume && !showSettings) return;
-    const onDown = () => { setShowVolume(false); setShowSettings(false); };
+    const onDown = () => {
+      setShowVolume(false);
+      setShowSettings(false);
+    };
     window.addEventListener('mousedown', onDown);
     return () => window.removeEventListener('mousedown', onDown);
   }, [showVolume, showSettings]);
@@ -84,7 +96,7 @@ export default function Controls({ state, controls, visible, metaPanelOpen, onTo
       className={`chrome absolute bottom-0 left-0 right-0 z-20 px-4 pt-2 pb-4 glass ${
         visible ? 'chrome-visible' : 'chrome-hidden'
       }`}
-      onMouseDown={e => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       {/* Progress bar row */}
       <div className="flex items-end gap-2 mb-1">
@@ -134,54 +146,77 @@ export default function Controls({ state, controls, visible, metaPanelOpen, onTo
         <div className="flex-1" />
 
         {/* Volume */}
-        <div className="relative" onMouseDown={e => e.stopPropagation()}>
+        <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           {showVolume && (
             <div className="absolute bottom-full mb-2 right-0 glass rounded-lg p-3 flex flex-col items-center gap-2">
               <input
-                type="range" min={0} max={1} step={0.02} value={displayVolume}
-                onChange={e => setVolume(parseFloat(e.target.value))}
+                type="range"
+                min={0}
+                max={1}
+                step={0.02}
+                value={displayVolume}
+                onChange={(e) => setVolume(parseFloat(e.target.value))}
                 className="h-20 w-4"
                 style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
               />
-              <span className="text-white/60 text-xs tabular-nums">{Math.round(displayVolume * 100)}%</span>
+              <span className="text-white/60 text-xs tabular-nums">
+                {Math.round(displayVolume * 100)}%
+              </span>
             </div>
           )}
-          <ChromeButton title="Volume" active={showVolume}
-            onClick={() => { setShowSettings(false); setShowVolume(v => !v); }}>
+          <ChromeButton
+            title="Volume"
+            active={showVolume}
+            onClick={() => {
+              setShowSettings(false);
+              setShowVolume((v) => !v);
+            }}
+          >
             <VolumeIcon muted={isMuted || volume === 0} />
           </ChromeButton>
         </div>
 
         {/* Settings */}
-        <div className="relative" onMouseDown={e => e.stopPropagation()}>
+        <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           {showSettings && (
             <div className="absolute bottom-full mb-2 right-0 glass rounded-lg p-3 min-w-44 flex flex-col gap-3">
               <div>
                 <p className="text-white/50 text-xs mb-1.5">Speed</p>
                 <div className="flex flex-wrap gap-1">
-                  {PLAYBACK_RATES.map(rate => (
-                    <button key={rate} onClick={() => setPlaybackRate(rate)}
+                  {PLAYBACK_RATES.map((rate) => (
+                    <button
+                      key={rate}
+                      onClick={() => setPlaybackRate(rate)}
                       className={`px-2 py-0.5 rounded text-xs transition-colors ${
                         playbackRate === rate
                           ? 'bg-white text-black font-medium'
                           : 'text-white/70 hover:text-white hover:bg-white/15'
-                      }`}>
+                      }`}
+                    >
                       {rate}×
                     </button>
                   ))}
                 </div>
               </div>
-              <button onClick={toggleLoop}
+              <button
+                onClick={toggleLoop}
                 className={`flex items-center justify-between w-full text-sm transition-colors ${
                   isLooping ? 'text-white' : 'text-white/60 hover:text-white'
-                }`}>
+                }`}
+              >
                 <span>Loop</span>
                 <TogglePill on={isLooping} />
               </button>
             </div>
           )}
-          <ChromeButton title="Settings" active={showSettings}
-            onClick={() => { setShowVolume(false); setShowSettings(v => !v); }}>
+          <ChromeButton
+            title="Settings"
+            active={showSettings}
+            onClick={() => {
+              setShowVolume(false);
+              setShowSettings((v) => !v);
+            }}
+          >
             <GearIcon />
           </ChromeButton>
         </div>
@@ -195,14 +230,25 @@ export default function Controls({ state, controls, visible, metaPanelOpen, onTo
   );
 }
 
-function ChromeButton({ children, title, onClick, active }: {
-  children: ReactNode; title?: string; onClick?: () => void; active?: boolean;
+function ChromeButton({
+  children,
+  title,
+  onClick,
+  active,
+}: {
+  children: ReactNode;
+  title?: string;
+  onClick?: () => void;
+  active?: boolean;
 }) {
   return (
-    <button title={title} onClick={onClick}
+    <button
+      title={title}
+      onClick={onClick}
       className={`flex items-center justify-center w-7 h-7 rounded transition-colors ${
         active ? 'bg-white/20 text-white' : 'text-white/70 hover:text-white hover:bg-white/15'
-      }`}>
+      }`}
+    >
       {children}
     </button>
   );
@@ -211,12 +257,9 @@ function ChromeButton({ children, title, onClick, active }: {
 function TogglePill({ on }: { on: boolean }) {
   return (
     <div className={`w-8 h-4 rounded-full transition-colors ${on ? 'bg-white' : 'bg-white/25'}`}>
-      <div className={`w-3 h-3 rounded-full bg-black m-0.5 transition-transform ${on ? 'translate-x-4' : ''}`} />
+      <div
+        className={`w-3 h-3 rounded-full bg-black m-0.5 transition-transform ${on ? 'translate-x-4' : ''}`}
+      />
     </div>
   );
 }
-
-
-
-
-

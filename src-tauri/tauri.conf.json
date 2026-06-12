@@ -28,43 +28,25 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "**"
-        ]
+        "scope": ["**"]
       }
     }
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis"
-    ],
+    "targets": ["nsis"],
     "publisher": "GrammyMoney",
     "category": "Video",
     "shortDescription": "Proxy video player and Suite pre-cache manager",
     "longDescription": "Levee is a lightweight video player for media professionals. Generate and toggle proxy files, manage Suite pre-cache from within the player, and inspect technical metadata \u2014 all from a single focused UI.",
     "fileAssociations": [
       {
-        "ext": [
-          "mp4",
-          "mov",
-          "mkv",
-          "avi",
-          "webm",
-          "mxf"
-        ],
+        "ext": ["mp4", "mov", "mkv", "avi", "webm", "mxf"],
         "name": "Video",
         "description": "Video file"
       },
       {
-        "ext": [
-          "mp3",
-          "wav",
-          "aiff",
-          "aac",
-          "flac",
-          "ogg"
-        ],
+        "ext": ["mp3", "wav", "aiff", "aac", "flac", "ogg"],
         "name": "Audio",
         "description": "Audio file"
       }
@@ -72,20 +54,13 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "languages": [
-          "English"
-        ],
+        "languages": ["English"],
         "startMenuFolder": "Levee",
         "displayLanguageSelector": false
       }
     },
-    "externalBin": [
-      "binaries/ffprobe",
-      "binaries/ffmpeg"
-    ],
-    "resources": [
-      "binaries/*.dll"
-    ],
+    "externalBin": ["binaries/ffprobe", "binaries/ffmpeg"],
+    "resources": ["binaries/*.dll"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

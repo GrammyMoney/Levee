@@ -22,7 +22,10 @@ pub(crate) fn proxies_root_for(original: &Path) -> Result<PathBuf, String> {
             let root = PathBuf::from(format!("{}\\", p.as_os_str().to_string_lossy()));
             Ok(root.join("Levee").join("Proxies"))
         }
-        _ => Err(format!("Cannot determine drive root for: {}", original.display())),
+        _ => Err(format!(
+            "Cannot determine drive root for: {}",
+            original.display()
+        )),
     }
 }
 
@@ -34,7 +37,10 @@ pub(crate) fn thumbnails_root_for(original: &Path) -> Result<PathBuf, String> {
             let root = PathBuf::from(format!("{}\\", p.as_os_str().to_string_lossy()));
             Ok(root.join("Levee").join("Thumbnails"))
         }
-        _ => Err(format!("Cannot determine drive root for: {}", original.display())),
+        _ => Err(format!(
+            "Cannot determine drive root for: {}",
+            original.display()
+        )),
     }
 }
 
@@ -43,7 +49,10 @@ pub(crate) fn thumbnails_root_for(original: &Path) -> Result<PathBuf, String> {
 pub(crate) fn proxy_path_for(original: &Path) -> Result<PathBuf, String> {
     let root = proxies_root_for(original)?;
     let hash = format!("{:016x}", fnv1a(&norm_for_hash(original)));
-    Ok(root.join(&hash[0..2]).join(&hash[2..4]).join(format!("{hash}.mp4")))
+    Ok(root
+        .join(&hash[0..2])
+        .join(&hash[2..4])
+        .join(format!("{hash}.mp4")))
 }
 
 /// Deterministic hashed path for a thumbnail.
@@ -51,5 +60,8 @@ pub(crate) fn proxy_path_for(original: &Path) -> Result<PathBuf, String> {
 pub(crate) fn thumbnail_path_for(original: &Path) -> Result<PathBuf, String> {
     let root = thumbnails_root_for(original)?;
     let hash = format!("{:016x}", fnv1a(&norm_for_hash(original)));
-    Ok(root.join(&hash[0..2]).join(&hash[2..4]).join(format!("{hash}.jpg")))
+    Ok(root
+        .join(&hash[0..2])
+        .join(&hash[2..4])
+        .join(format!("{hash}.jpg")))
 }

@@ -1,24 +1,32 @@
 mod dcomp;
-mod mpv;
-mod media_format;
-mod proxy_paths;
-mod process_tools;
-mod media_probe;
 mod file_commands;
-mod suite_commands;
+mod media_format;
+mod media_probe;
+mod mpv;
+mod process_tools;
 mod proxy_commands;
+mod proxy_paths;
+mod suite_commands;
 mod thumbnail_commands;
 
+use file_commands::{
+    get_file_size, get_sibling_files, list_directory, list_drives, open_folder, open_url,
+    pick_file, set_as_default_player,
+};
+use media_probe::get_probe_data;
+use proxy_commands::{
+    delete_proxy, generate_proxy, get_proxies_batch, get_proxies_root, get_proxy,
+};
+use rusqlite::{params, Connection};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
-use rusqlite::{Connection, params};
-use serde::Serialize;
+use suite_commands::{
+    precache_proxies_folder, set_suite_roots, suite_precache_add, suite_precache_list,
+    suite_precache_remove,
+};
 use tauri::{Emitter, Manager};
-use media_probe::get_probe_data;
-use file_commands::{get_file_size, get_sibling_files, list_directory, list_drives, open_folder, open_url, pick_file, set_as_default_player};
-use suite_commands::{precache_proxies_folder, set_suite_roots, suite_precache_add, suite_precache_list, suite_precache_remove};
-use proxy_commands::{delete_proxy, generate_proxy, get_proxies_batch, get_proxies_root, get_proxy};
 use thumbnail_commands::get_thumbnail;
 
 // Schema for levee.db — lives at {drive_root}\Levee\levee.db on Suite drives,
@@ -98,8 +106,11 @@ impl AppState {
     pub(crate) fn delete_proxy_record(&self, original_path: &str) -> Result<(), String> {
         let mut pool = self.0.lock().unwrap();
         let db = pool.db_for(Path::new(original_path));
-        db.execute("DELETE FROM proxies WHERE original_path = ?1", [original_path])
-            .map_err(|e| e.to_string())?;
+        db.execute(
+            "DELETE FROM proxies WHERE original_path = ?1",
+            [original_path],
+        )
+        .map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -127,16 +138,18 @@ struct MpvState {
 struct PendingOpen(Mutex<Option<String>>);
 
 fn norm_path(p: &str) -> String {
-    p.to_lowercase().replace('/', "\\").trim_end_matches('\\').to_string() + "\\"
+    p.to_lowercase()
+        .replace('/', "\\")
+        .trim_end_matches('\\')
+        .to_string()
+        + "\\"
 }
 
 /// Returns the Windows drive root (e.g. "C:\\") for a path, or None on non-Windows paths.
 fn drive_root_of(path: &Path) -> Option<String> {
     use std::path::Component;
     match path.components().next() {
-        Some(Component::Prefix(p)) => {
-            Some(format!("{}\\", p.as_os_str().to_string_lossy()))
-        }
+        Some(Component::Prefix(p)) => Some(format!("{}\\", p.as_os_str().to_string_lossy())),
         _ => None,
     }
 }
@@ -181,7 +194,11 @@ fn start_mpv_event_thread(handle: mpv::Handle, app: tauri::AppHandle) {
     handle.observe_double(OBS_VOLUME, "volume");
 
     std::thread::spawn(move || {
-        let mut state = MpvPlayerState { volume: 100.0, speed: 1.0, ..Default::default() };
+        let mut state = MpvPlayerState {
+            volume: 100.0,
+            speed: 1.0,
+            ..Default::default()
+        };
         loop {
             let ev = unsafe { handle.wait_event(0.5) };
             if ev.is_null() {
@@ -204,8 +221,12 @@ fn start_mpv_event_thread(handle: mpv::Handle, app: tauri::AppHandle) {
                         OBS_DURATION => state.duration = unsafe { *(prop.data as *const f64) },
                         OBS_SPEED => state.speed = unsafe { *(prop.data as *const f64) },
                         OBS_VOLUME => state.volume = unsafe { *(prop.data as *const f64) },
-                        OBS_PAUSE => state.paused = unsafe { *(prop.data as *const std::ffi::c_int) } != 0,
-                        OBS_EOF => state.eof = unsafe { *(prop.data as *const std::ffi::c_int) } != 0,
+                        OBS_PAUSE => {
+                            state.paused = unsafe { *(prop.data as *const std::ffi::c_int) } != 0
+                        }
+                        OBS_EOF => {
+                            state.eof = unsafe { *(prop.data as *const std::ffi::c_int) } != 0
+                        }
                         _ => continue,
                     }
                     let _ = app.emit("mpv-state", state.clone());
@@ -224,76 +245,123 @@ fn mpv_handle(state: &tauri::State<MpvState>) -> mpv::Handle {
 #[tauri::command]
 fn mpv_load(state: tauri::State<MpvState>, path: String) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).command(&["loadfile", &path]) }
+    {
+        mpv_handle(&state).command(&["loadfile", &path])
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, path); Err("mpv only available on Windows".into()) }
+    {
+        let _ = (&state, path);
+        Err("mpv only available on Windows".into())
+    }
 }
 
 #[tauri::command]
 fn mpv_set_pause(state: tauri::State<MpvState>, paused: bool) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).set_flag("pause", paused) }
+    {
+        mpv_handle(&state).set_flag("pause", paused)
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, paused); Ok(()) }
+    {
+        let _ = (&state, paused);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_seek(state: tauri::State<MpvState>, time: f64) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).command(&["seek", &time.to_string(), "absolute"]) }
+    {
+        mpv_handle(&state).command(&["seek", &time.to_string(), "absolute"])
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, time); Ok(()) }
+    {
+        let _ = (&state, time);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_seek_by(state: tauri::State<MpvState>, delta: f64) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).command(&["seek", &delta.to_string(), "relative"]) }
+    {
+        mpv_handle(&state).command(&["seek", &delta.to_string(), "relative"])
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, delta); Ok(()) }
+    {
+        let _ = (&state, delta);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_frame_step(state: tauri::State<MpvState>, direction: i32) -> Result<(), String> {
     #[cfg(windows)]
     {
-        let cmd = if direction >= 0 { "frame-step" } else { "frame-back-step" };
+        let cmd = if direction >= 0 {
+            "frame-step"
+        } else {
+            "frame-back-step"
+        };
         mpv_handle(&state).command(&[cmd])
     }
     #[cfg(not(windows))]
-    { let _ = (&state, direction); Ok(()) }
+    {
+        let _ = (&state, direction);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_set_volume(state: tauri::State<MpvState>, volume: f64) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).set_double("volume", volume.clamp(0.0, 130.0)) }
+    {
+        mpv_handle(&state).set_double("volume", volume.clamp(0.0, 130.0))
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, volume); Ok(()) }
+    {
+        let _ = (&state, volume);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_set_mute(state: tauri::State<MpvState>, muted: bool) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).set_flag("mute", muted) }
+    {
+        mpv_handle(&state).set_flag("mute", muted)
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, muted); Ok(()) }
+    {
+        let _ = (&state, muted);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_set_speed(state: tauri::State<MpvState>, speed: f64) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).set_double("speed", speed) }
+    {
+        mpv_handle(&state).set_double("speed", speed)
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, speed); Ok(()) }
+    {
+        let _ = (&state, speed);
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn mpv_set_loop(state: tauri::State<MpvState>, looping: bool) -> Result<(), String> {
     #[cfg(windows)]
-    { mpv_handle(&state).set_string("loop-file", if looping { "inf" } else { "no" }) }
+    {
+        mpv_handle(&state).set_string("loop-file", if looping { "inf" } else { "no" })
+    }
     #[cfg(not(windows))]
-    { let _ = (&state, looping); Ok(()) }
+    {
+        let _ = (&state, looping);
+        Ok(())
+    }
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -318,7 +386,8 @@ pub fn run() {
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
-            let file_args: Vec<String> = argv.into_iter()
+            let file_args: Vec<String> = argv
+                .into_iter()
                 .skip(1)
                 .filter(|a| !a.starts_with("--") && Path::new(a.as_str()).exists())
                 .collect();
@@ -331,19 +400,22 @@ pub fn run() {
         .setup(|app| {
             // Explicitly (re)apply the window icon so the taskbar uses the
             // current branded icon regardless of what got embedded at build time.
-            if let (Some(win), Some(icon)) =
-                (app.get_webview_window("main"), app.default_window_icon().cloned())
-            {
+            if let (Some(win), Some(icon)) = (
+                app.get_webview_window("main"),
+                app.default_window_icon().cloned(),
+            ) {
                 let _ = win.set_icon(icon);
             }
 
-            let data_dir = app.path().app_data_dir()
+            let data_dir = app
+                .path()
+                .app_data_dir()
                 .expect("failed to resolve app data dir");
             std::fs::create_dir_all(&data_dir)?;
             let local_db_path = data_dir.join("levee.db");
-            let local = Connection::open(&local_db_path)
-                .expect("failed to open local database");
-            local.execute_batch(SCHEMA)
+            let local = Connection::open(&local_db_path).expect("failed to open local database");
+            local
+                .execute_batch(SCHEMA)
                 .expect("failed to run schema migration");
 
             app.manage(AppState(Mutex::new(DbPool {
@@ -363,13 +435,16 @@ pub fn run() {
                         app.manage(MpvState { handle });
                         if let Some(win) = app.get_webview_window("main") {
                             let hwnd = win.hwnd().expect("main HWND").0 as isize;
-                            let size = win.inner_size().unwrap_or(tauri::PhysicalSize::new(1280, 720));
+                            let size = win
+                                .inner_size()
+                                .unwrap_or(tauri::PhysicalSize::new(1280, 720));
 
                             // Shared latest-window-size; the render thread resizes
                             // its swapchain to match when this changes.
-                            let resize = std::sync::Arc::new(AtomicU64::new(
-                                dcomp::pack_size(size.width, size.height),
-                            ));
+                            let resize = std::sync::Arc::new(AtomicU64::new(dcomp::pack_size(
+                                size.width,
+                                size.height,
+                            )));
                             dcomp::start(hwnd, size.width, size.height, handle, resize.clone());
 
                             // Push physical-pixel size changes to the render thread.

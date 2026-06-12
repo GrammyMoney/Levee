@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+set -e
+
+pnpm run format
+
+# Re-stage files changed by the formatter so the committed snapshot matches
+# what was verified by the hook.
+git diff --name-only -z | xargs -0 -r git add

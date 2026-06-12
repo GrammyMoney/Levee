@@ -33,7 +33,7 @@ function isValidBinary(path) {
 }
 
 export function getMissingBinaries(binariesDir = DEFAULT_BINARIES_DIR) {
-  return REQUIRED_BINARIES.filter(name => !isValidBinary(resolve(binariesDir, name)));
+  return REQUIRED_BINARIES.filter((name) => !isValidBinary(resolve(binariesDir, name)));
 }
 
 function ensureWindows() {
@@ -44,31 +44,35 @@ function ensureWindows() {
 
 function request(url, { asJson = false } = {}) {
   return new Promise((resolvePromise, reject) => {
-    const req = https.get(url, {
-      headers: {
-        'User-Agent': 'Levee prepare-binaries',
-        'Accept': asJson ? 'application/vnd.github+json' : '*/*',
+    const req = https.get(
+      url,
+      {
+        headers: {
+          'User-Agent': 'Levee prepare-binaries',
+          Accept: asJson ? 'application/vnd.github+json' : '*/*',
+        },
       },
-    }, res => {
-      if ([301, 302, 303, 307, 308].includes(res.statusCode ?? 0) && res.headers.location) {
-        res.resume();
-        resolvePromise(request(new URL(res.headers.location, url).toString(), { asJson }));
-        return;
-      }
+      (res) => {
+        if ([301, 302, 303, 307, 308].includes(res.statusCode ?? 0) && res.headers.location) {
+          res.resume();
+          resolvePromise(request(new URL(res.headers.location, url).toString(), { asJson }));
+          return;
+        }
 
-      if ((res.statusCode ?? 0) < 200 || (res.statusCode ?? 0) >= 300) {
-        res.resume();
-        reject(new Error(`GET ${url} failed with HTTP ${res.statusCode}`));
-        return;
-      }
+        if ((res.statusCode ?? 0) < 200 || (res.statusCode ?? 0) >= 300) {
+          res.resume();
+          reject(new Error(`GET ${url} failed with HTTP ${res.statusCode}`));
+          return;
+        }
 
-      const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
-      res.on('end', () => {
-        const buffer = Buffer.concat(chunks);
-        resolvePromise(asJson ? JSON.parse(buffer.toString('utf8')) : buffer);
-      });
-    });
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => {
+          const buffer = Buffer.concat(chunks);
+          resolvePromise(asJson ? JSON.parse(buffer.toString('utf8')) : buffer);
+        });
+      },
+    );
 
     req.on('error', reject);
   });
@@ -81,32 +85,43 @@ async function download(url, dest) {
 
 function extractArchive(archivePath, destDir) {
   mkdirSync(destDir, { recursive: true });
-  const result = spawnSync('tar', ['-xf', archivePath, '-C', destDir], { stdio: 'pipe', encoding: 'utf8' });
+  const result = spawnSync('tar', ['-xf', archivePath, '-C', destDir], {
+    stdio: 'pipe',
+    encoding: 'utf8',
+  });
   if (result.status !== 0) {
-    throw new Error([
-      `Failed to extract ${archivePath}.`,
-      'This script expects Windows bsdtar, which ships with current Windows 10/11 installs.',
-      result.stderr.trim(),
-    ].filter(Boolean).join('\n'));
+    throw new Error(
+      [
+        `Failed to extract ${archivePath}.`,
+        'This script expects Windows bsdtar, which ships with current Windows 10/11 installs.',
+        result.stderr.trim(),
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    );
   }
 }
 
 function walkFiles(dir) {
-  return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
     return entry.isDirectory() ? walkFiles(path) : [path];
   });
 }
 
 function findRequiredFile(root, fileName) {
-  const match = walkFiles(root).find(path => basename(path).toLowerCase() === fileName.toLowerCase());
+  const match = walkFiles(root).find(
+    (path) => basename(path).toLowerCase() === fileName.toLowerCase(),
+  );
   if (!match) throw new Error(`Could not find ${fileName} inside extracted archive.`);
   return match;
 }
 
 async function getLatestMpvDevAssetUrl() {
   const release = await request(MPV_RELEASE_API, { asJson: true });
-  const asset = release.assets.find(({ name }) => /^mpv-dev-x86_64-\d{8}-git-[a-f0-9]+\.7z$/i.test(name));
+  const asset = release.assets.find(({ name }) =>
+    /^mpv-dev-x86_64-\d{8}-git-[a-f0-9]+\.7z$/i.test(name),
+  );
   if (!asset) {
     throw new Error('Could not find mpv-dev-x86_64 asset in latest zhongfly/mpv-winbuild release.');
   }
@@ -118,8 +133,14 @@ async function installFfmpegTools(workDir, binariesDir) {
   const extractDir = join(workDir, 'ffmpeg');
   await download(FFMPEG_URL, archive);
   extractArchive(archive, extractDir);
-  copyFileSync(findRequiredFile(extractDir, 'ffmpeg.exe'), resolve(binariesDir, 'ffmpeg-x86_64-pc-windows-msvc.exe'));
-  copyFileSync(findRequiredFile(extractDir, 'ffprobe.exe'), resolve(binariesDir, 'ffprobe-x86_64-pc-windows-msvc.exe'));
+  copyFileSync(
+    findRequiredFile(extractDir, 'ffmpeg.exe'),
+    resolve(binariesDir, 'ffmpeg-x86_64-pc-windows-msvc.exe'),
+  );
+  copyFileSync(
+    findRequiredFile(extractDir, 'ffprobe.exe'),
+    resolve(binariesDir, 'ffprobe-x86_64-pc-windows-msvc.exe'),
+  );
 }
 
 async function installMpvDlls(workDir, binariesDir) {
@@ -129,8 +150,8 @@ async function installMpvDlls(workDir, binariesDir) {
   await download(mpvUrl, archive);
   extractArchive(archive, extractDir);
 
-  const dlls = walkFiles(extractDir).filter(path => path.toLowerCase().endsWith('.dll'));
-  if (!dlls.some(path => basename(path).toLowerCase() === 'libmpv-2.dll')) {
+  const dlls = walkFiles(extractDir).filter((path) => path.toLowerCase().endsWith('.dll'));
+  if (!dlls.some((path) => basename(path).toLowerCase() === 'libmpv-2.dll')) {
     throw new Error('Downloaded mpv archive did not contain libmpv-2.dll.');
   }
 
@@ -145,12 +166,19 @@ export async function prepareBinaries({ binariesDir = DEFAULT_BINARIES_DIR, forc
 
   const missingBefore = force ? REQUIRED_BINARIES : getMissingBinaries(binariesDir);
   if (missingBefore.length === 0) {
-    return { ok: true, binariesDir, missing: [], message: `All Levee native binaries are present in ${binariesDir}` };
+    return {
+      ok: true,
+      binariesDir,
+      missing: [],
+      message: `All Levee native binaries are present in ${binariesDir}`,
+    };
   }
 
   const workDir = mkdtempSync(join(tmpdir(), 'levee-binaries-'));
   try {
-    const needsFfmpeg = force || missingBefore.some(name => name.startsWith('ffmpeg') || name.startsWith('ffprobe'));
+    const needsFfmpeg =
+      force ||
+      missingBefore.some((name) => name.startsWith('ffmpeg') || name.startsWith('ffprobe'));
     const needsMpv = force || missingBefore.includes('libmpv-2.dll');
 
     if (needsFfmpeg) await installFfmpegTools(workDir, binariesDir);
@@ -162,7 +190,7 @@ export async function prepareBinaries({ binariesDir = DEFAULT_BINARIES_DIR, forc
         ok: false,
         binariesDir,
         missing: missingAfter,
-        message: `Downloaded native binaries, but these required files are still missing or invalid:\n${missingAfter.map(name => `  - ${name}`).join('\n')}`,
+        message: `Downloaded native binaries, but these required files are still missing or invalid:\n${missingAfter.map((name) => `  - ${name}`).join('\n')}`,
       };
     }
 
@@ -180,11 +208,11 @@ export async function prepareBinaries({ binariesDir = DEFAULT_BINARIES_DIR, forc
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const force = process.argv.includes('--force');
   prepareBinaries({ force })
-    .then(result => {
+    .then((result) => {
       console.log(result.message);
       if (!result.ok) process.exitCode = 1;
     })
-    .catch(error => {
+    .catch((error) => {
       console.error(error instanceof Error ? error.message : String(error));
       process.exitCode = 1;
     });

@@ -1,5 +1,15 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { mpvFrameStep, mpvLoad, mpvSeek, mpvSeekBy, mpvSetLoop, mpvSetMute, mpvSetPause, mpvSetSpeed, mpvSetVolume } from '../api/tauri';
+import {
+  mpvFrameStep,
+  mpvLoad,
+  mpvSeek,
+  mpvSeekBy,
+  mpvSetLoop,
+  mpvSetMute,
+  mpvSetPause,
+  mpvSetSpeed,
+  mpvSetVolume,
+} from '../api/tauri';
 import { listenMpvState } from '../api/events';
 import { PLAYBACK_RATES, type VideoPlayerState, type VideoPlayerControls } from '../domain/player';
 
@@ -20,14 +30,14 @@ export function useMpvPlayer() {
   const pendingSeekRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const unlisten = listenMpvState(s => {
+    const unlisten = listenMpvState((s) => {
       // Apply a pending resume seek once the new file has a known duration.
       if (pendingSeekRef.current != null && s.duration > 0) {
         const t = pendingSeekRef.current;
         pendingSeekRef.current = null;
         mpvSeek(t).catch(() => {});
       }
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         isPlaying: !s.paused && !s.eof,
         currentTime: s.timePos,
@@ -36,20 +46,26 @@ export function useMpvPlayer() {
         playbackRate: s.speed,
       }));
     });
-    return () => { unlisten.then(fn => fn()); };
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, []);
 
   const openFile = useCallback((path: string, seekTo?: number) => {
     pendingSeekRef.current = seekTo && seekTo > 0 ? seekTo : null;
-    setState(prev => ({ ...prev, currentTime: 0, duration: 0 }));
-    mpvLoad(path).catch(err => console.error('[mpv] load failed:', err));
+    setState((prev) => ({ ...prev, currentTime: 0, duration: 0 }));
+    mpvLoad(path).catch((err) => console.error('[mpv] load failed:', err));
   }, []);
 
-  const play = useCallback(() => { mpvSetPause(false).catch(() => {}); }, []);
-  const pause = useCallback(() => { mpvSetPause(true).catch(() => {}); }, []);
+  const play = useCallback(() => {
+    mpvSetPause(false).catch(() => {});
+  }, []);
+  const pause = useCallback(() => {
+    mpvSetPause(true).catch(() => {});
+  }, []);
 
   const toggle = useCallback(() => {
-    setState(prev => {
+    setState((prev) => {
       mpvSetPause(prev.isPlaying).catch(() => {});
       return prev;
     });
@@ -72,40 +88,51 @@ export function useMpvPlayer() {
     muteRef.current = false;
     mpvSetVolume(clamped * 100).catch(() => {});
     mpvSetMute(false).catch(() => {});
-    setState(prev => ({ ...prev, volume: clamped, isMuted: false }));
+    setState((prev) => ({ ...prev, volume: clamped, isMuted: false }));
   }, []);
 
   const toggleMute = useCallback(() => {
     muteRef.current = !muteRef.current;
     mpvSetMute(muteRef.current).catch(() => {});
-    setState(prev => ({ ...prev, isMuted: muteRef.current }));
+    setState((prev) => ({ ...prev, isMuted: muteRef.current }));
   }, []);
 
   const setPlaybackRate = useCallback((rate: number) => {
     mpvSetSpeed(rate).catch(() => {});
-    setState(prev => ({ ...prev, playbackRate: rate }));
+    setState((prev) => ({ ...prev, playbackRate: rate }));
   }, []);
 
-  const cyclePlaybackRate = useCallback((direction: 1 | -1) => {
-    setState(prev => {
-      const idx = PLAYBACK_RATES.indexOf(prev.playbackRate);
-      const next = idx === -1
-        ? 3
-        : Math.max(0, Math.min(PLAYBACK_RATES.length - 1, idx + direction));
-      setPlaybackRate(PLAYBACK_RATES[next]);
-      return prev;
-    });
-  }, [setPlaybackRate]);
+  const cyclePlaybackRate = useCallback(
+    (direction: 1 | -1) => {
+      setState((prev) => {
+        const idx = PLAYBACK_RATES.indexOf(prev.playbackRate);
+        const next =
+          idx === -1 ? 3 : Math.max(0, Math.min(PLAYBACK_RATES.length - 1, idx + direction));
+        setPlaybackRate(PLAYBACK_RATES[next]);
+        return prev;
+      });
+    },
+    [setPlaybackRate],
+  );
 
   const toggleLoop = useCallback(() => {
     loopRef.current = !loopRef.current;
     mpvSetLoop(loopRef.current).catch(() => {});
-    setState(prev => ({ ...prev, isLooping: loopRef.current }));
+    setState((prev) => ({ ...prev, isLooping: loopRef.current }));
   }, []);
 
   const controls: VideoPlayerControls = {
-    play, pause, toggle, seek, seekBy, stepFrame,
-    setVolume, toggleMute, setPlaybackRate, cyclePlaybackRate, toggleLoop,
+    play,
+    pause,
+    toggle,
+    seek,
+    seekBy,
+    stepFrame,
+    setVolume,
+    toggleMute,
+    setPlaybackRate,
+    cyclePlaybackRate,
+    toggleLoop,
   };
 
   return { state, controls, openFile };

@@ -1,6 +1,8 @@
-use serde::{Deserialize, Serialize};
-use crate::media_format::{format_bitrate, format_bytes, parse_frame_rate, pretty_codec, pretty_container};
+use crate::media_format::{
+    format_bitrate, format_bytes, parse_frame_rate, pretty_codec, pretty_container,
+};
 use crate::process_tools::{ffprobe_binary, quiet_command};
+use serde::{Deserialize, Serialize};
 
 // ── ffprobe metadata ──────────────────────────────────────────────────────────
 
@@ -26,8 +28,10 @@ pub(crate) fn get_probe_data(app: tauri::AppHandle, path: String) -> Result<Prob
     let ffprobe = ffprobe_binary(&app);
     let output = quiet_command(&ffprobe)
         .args([
-            "-v", "quiet",
-            "-print_format", "json",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
             "-show_streams",
             "-show_format",
             &path,
@@ -47,16 +51,20 @@ pub(crate) fn get_probe_data(app: tauri::AppHandle, path: String) -> Result<Prob
     let format = &json["format"];
 
     // Find first video stream
-    let video = streams.iter().find(|s| s["codec_type"].as_str() == Some("video"));
+    let video = streams
+        .iter()
+        .find(|s| s["codec_type"].as_str() == Some("video"));
     // Find first audio stream
-    let audio = streams.iter().find(|s| s["codec_type"].as_str() == Some("audio"));
+    let audio = streams
+        .iter()
+        .find(|s| s["codec_type"].as_str() == Some("audio"));
 
     let codec = video
         .and_then(|v| v["codec_name"].as_str())
         .map(pretty_codec)
         .unwrap_or_else(|| "—".to_string());
 
-    let width  = video.and_then(|v| v["width"].as_u64()).unwrap_or(0)  as u32;
+    let width = video.and_then(|v| v["width"].as_u64()).unwrap_or(0) as u32;
     let height = video.and_then(|v| v["height"].as_u64()).unwrap_or(0) as u32;
 
     let frame_rate = video
@@ -67,9 +75,17 @@ pub(crate) fn get_probe_data(app: tauri::AppHandle, path: String) -> Result<Prob
     // Prefer stream bit_rate, fall back to format bit_rate
     let bps = video
         .and_then(|v| v["bit_rate"].as_str().and_then(|s| s.parse::<u64>().ok()))
-        .or_else(|| format["bit_rate"].as_str().and_then(|s| s.parse::<u64>().ok()))
+        .or_else(|| {
+            format["bit_rate"]
+                .as_str()
+                .and_then(|s| s.parse::<u64>().ok())
+        })
         .unwrap_or(0);
-    let bit_rate = if bps > 0 { format_bitrate(bps) } else { "—".to_string() };
+    let bit_rate = if bps > 0 {
+        format_bitrate(bps)
+    } else {
+        "—".to_string()
+    };
 
     let duration_secs = format["duration"]
         .as_str()
@@ -98,9 +114,7 @@ pub(crate) fn get_probe_data(app: tauri::AppHandle, path: String) -> Result<Prob
         .map(pretty_codec)
         .unwrap_or_else(|| "—".to_string());
 
-    let audio_channels = audio
-        .and_then(|a| a["channels"].as_u64())
-        .unwrap_or(0) as u32;
+    let audio_channels = audio.and_then(|a| a["channels"].as_u64()).unwrap_or(0) as u32;
 
     let file_size = std::fs::metadata(&path)
         .map(|m| format_bytes(m.len()))

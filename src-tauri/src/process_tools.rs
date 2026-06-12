@@ -22,7 +22,11 @@ pub(crate) fn resolve_ffmpeg() -> String {
     // Bundled sidecar (externalBin): lands next to the exe as `ffmpeg.exe`.
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let sidecar = dir.join(if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" });
+            let sidecar = dir.join(if cfg!(windows) {
+                "ffmpeg.exe"
+            } else {
+                "ffmpeg"
+            });
             if sidecar.exists() {
                 return sidecar.to_string_lossy().into_owned();
             }
@@ -32,14 +36,21 @@ pub(crate) fn resolve_ffmpeg() -> String {
     {
         if let Some(local) = std::env::var_os("LOCALAPPDATA") {
             let shim = Path::new(&local)
-                .join("Microsoft").join("WinGet").join("Links").join("ffmpeg.exe");
-            if shim.exists() { return shim.to_string_lossy().into_owned(); }
+                .join("Microsoft")
+                .join("WinGet")
+                .join("Links")
+                .join("ffmpeg.exe");
+            if shim.exists() {
+                return shim.to_string_lossy().into_owned();
+            }
         }
         for c in [
             r"C:\ffmpeg\bin\ffmpeg.exe",
             r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
         ] {
-            if Path::new(c).exists() { return c.to_string(); }
+            if Path::new(c).exists() {
+                return c.to_string();
+            }
         }
     }
     "ffmpeg".to_string()
@@ -50,7 +61,11 @@ pub(crate) fn ffprobe_binary(app: &tauri::AppHandle) -> PathBuf {
     // In a Tauri bundle, sidecars land next to the main executable.
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let candidate = dir.join(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" });
+            let candidate = dir.join(if cfg!(windows) {
+                "ffprobe.exe"
+            } else {
+                "ffprobe"
+            });
             if candidate.exists() {
                 return candidate;
             }
@@ -58,10 +73,18 @@ pub(crate) fn ffprobe_binary(app: &tauri::AppHandle) -> PathBuf {
     }
     // Also check resource_dir (dev builds)
     if let Ok(res) = app.path().resource_dir() {
-        let candidate = res.join(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" });
+        let candidate = res.join(if cfg!(windows) {
+            "ffprobe.exe"
+        } else {
+            "ffprobe"
+        });
         if candidate.exists() {
             return candidate;
         }
     }
-    PathBuf::from(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" })
+    PathBuf::from(if cfg!(windows) {
+        "ffprobe.exe"
+    } else {
+        "ffprobe"
+    })
 }

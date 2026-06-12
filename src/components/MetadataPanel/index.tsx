@@ -29,25 +29,39 @@ export default function MetadataPanel({ isOpen, filePath, onClose }: Props) {
     setError(null);
     setLoading(true);
     getProbeData(filePath)
-      .then(data => { setProbe(data); setLoading(false); })
-      .catch(err => { setError(String(err)); setLoading(false); });
+      .then((data) => {
+        setProbe(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(String(err));
+        setLoading(false);
+      });
   }, [isOpen, filePath]);
 
-  const rows: { label: string; value: string }[] = probe ? [
-    { label: 'Codec',       value: probe.codec || '—' },
-    { label: 'Resolution',  value: probe.width && probe.height ? `${probe.width} × ${probe.height}` : '—' },
-    { label: 'Frame Rate',  value: probe.frameRate || '—' },
-    { label: 'Bit Rate',    value: probe.bitRate || '—' },
-    { label: 'Duration',    value: formatDuration(probe.durationSecs) },
-    { label: 'Timecode',    value: probe.timecode || '—' },
-    { label: 'Container',   value: probe.container || '—' },
-    { label: 'Color Space', value: probe.colorSpace || '—' },
-    { label: 'Audio',       value: probe.audioCodec
-        ? `${probe.audioCodec}${probe.audioChannels ? ` · ${probe.audioChannels}ch` : ''}`
-        : '—' },
-    { label: 'File Size',   value: probe.fileSize || '—' },
-    { label: 'File Path',   value: filePath },
-  ] : [];
+  const rows: { label: string; value: string }[] = probe
+    ? [
+        { label: 'Codec', value: probe.codec || '—' },
+        {
+          label: 'Resolution',
+          value: probe.width && probe.height ? `${probe.width} × ${probe.height}` : '—',
+        },
+        { label: 'Frame Rate', value: probe.frameRate || '—' },
+        { label: 'Bit Rate', value: probe.bitRate || '—' },
+        { label: 'Duration', value: formatDuration(probe.durationSecs) },
+        { label: 'Timecode', value: probe.timecode || '—' },
+        { label: 'Container', value: probe.container || '—' },
+        { label: 'Color Space', value: probe.colorSpace || '—' },
+        {
+          label: 'Audio',
+          value: probe.audioCodec
+            ? `${probe.audioCodec}${probe.audioChannels ? ` · ${probe.audioChannels}ch` : ''}`
+            : '—',
+        },
+        { label: 'File Size', value: probe.fileSize || '—' },
+        { label: 'File Path', value: filePath },
+      ]
+    : [];
 
   return (
     <div
@@ -57,7 +71,9 @@ export default function MetadataPanel({ isOpen, filePath, onClose }: Props) {
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/8 shrink-0">
-        <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">File Info</span>
+        <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">
+          File Info
+        </span>
         <button
           onClick={onClose}
           className="flex items-center justify-center w-6 h-6 rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors"
@@ -81,20 +97,26 @@ export default function MetadataPanel({ isOpen, filePath, onClose }: Props) {
           </div>
         )}
 
-        {!loading && !error && rows.map(({ label, value }) => (
-          <div key={label} className="px-4 py-2.5 flex flex-col gap-0.5 border-b border-white/5 last:border-0">
-            <span className="text-[10px] uppercase tracking-wider text-white/35 font-medium">{label}</span>
-            <span
-              className={`text-xs text-white/80 break-all leading-snug ${
-                label === 'File Path' ? 'font-mono text-[10px] text-white/40' : ''
-              }`}
+        {!loading &&
+          !error &&
+          rows.map(({ label, value }) => (
+            <div
+              key={label}
+              className="px-4 py-2.5 flex flex-col gap-0.5 border-b border-white/5 last:border-0"
             >
-              {value}
-            </span>
-          </div>
-        ))}
+              <span className="text-[10px] uppercase tracking-wider text-white/35 font-medium">
+                {label}
+              </span>
+              <span
+                className={`text-xs text-white/80 break-all leading-snug ${
+                  label === 'File Path' ? 'font-mono text-[10px] text-white/40' : ''
+                }`}
+              >
+                {value}
+              </span>
+            </div>
+          ))}
       </div>
     </div>
   );
 }
-

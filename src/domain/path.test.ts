@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { getDirName, getFileName, getParentDir, normalizeDriveRoot, normalizePath, toPosixPath } from './path';
+import {
+  getDirName,
+  getFileName,
+  getParentDir,
+  normalizeDriveRoot,
+  normalizePath,
+  toPosixPath,
+} from './path';
 
 describe('path helpers', () => {
   it('gets file and folder names from Windows or POSIX paths', () => {

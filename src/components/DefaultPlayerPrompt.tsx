@@ -12,7 +12,9 @@ export default function DefaultPlayerPrompt() {
 
   const setDefault = async () => {
     setBusy(true);
-    try { await setAsDefaultPlayer(); } catch {}
+    try {
+      await setAsDefaultPlayer();
+    } catch {}
     setDefaultPlayerPrompted(true);
   };
 
@@ -20,10 +22,12 @@ export default function DefaultPlayerPrompt() {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="glass rounded-2xl p-6 max-w-sm w-[90%] flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
-          <h2 className="text-white text-base font-semibold">Make Levee your default video player?</h2>
+          <h2 className="text-white text-base font-semibold">
+            Make Levee your default video player?
+          </h2>
           <p className="text-white/60 text-sm leading-relaxed">
-            Recommended — opens your footage in Levee when you double-click it.
-            We'll take you to Windows settings to confirm the choice.
+            Recommended — opens your footage in Levee when you double-click it. We'll take you to
+            Windows settings to confirm the choice.
           </p>
         </div>
         <div className="flex gap-2 justify-end">

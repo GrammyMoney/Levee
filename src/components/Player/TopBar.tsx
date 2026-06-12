@@ -1,4 +1,14 @@
-import { CloudCheckIcon, CloudIcon, CloseIcon, ExternalLinkIcon, FolderIcon, MaximizeIcon, MinimizeIcon, OpenFileIcon, SpinnerIcon } from '../icons';
+import {
+  CloudCheckIcon,
+  CloudIcon,
+  CloseIcon,
+  ExternalLinkIcon,
+  FolderIcon,
+  MaximizeIcon,
+  MinimizeIcon,
+  OpenFileIcon,
+  SpinnerIcon,
+} from '../icons';
 import { useSuite } from '../../contexts/SuiteContext';
 import { openFolder } from '../../api/tauri';
 import { closeWindow, minimizeWindow, toggleMaximizeWindow } from '../../api/window';
@@ -16,21 +26,28 @@ interface Props {
 }
 
 export default function TopBar({
-  fileName, filePath, visible, libraryOpen, hasProxy, isPlayingProxy, onToggleProxy, onOpenFile, onOpenLibrary,
+  fileName,
+  filePath,
+  visible,
+  libraryOpen,
+  hasProxy,
+  isPlayingProxy,
+  onToggleProxy,
+  onOpenFile,
+  onOpenLibrary,
 }: Props) {
   const { isSuitePath, isPrecached, precachedEntryFor, isLoading, togglePrecache } = useSuite();
-  const isSuiteFile    = isSuitePath(filePath);
-  const precached      = isPrecached(filePath);
-  const loading        = isLoading(filePath);
-  const norm           = (p: string) => p.toLowerCase().replace(/\\/g, '/');
-  const cachedEntry    = precachedEntryFor(filePath);
+  const isSuiteFile = isSuitePath(filePath);
+  const precached = isPrecached(filePath);
+  const loading = isLoading(filePath);
+  const norm = (p: string) => p.toLowerCase().replace(/\\/g, '/');
+  const cachedEntry = precachedEntryFor(filePath);
   // True when cached via a parent folder entry — show active state but disable interaction
-  const folderCached   = cachedEntry !== null && norm(cachedEntry) !== norm(filePath);
+  const folderCached = cachedEntry !== null && norm(cachedEntry) !== norm(filePath);
 
   const openInExplorer = () => {
     openFolder(filePath).catch(() => {});
   };
-
 
   return (
     <div
@@ -71,9 +88,11 @@ export default function TopBar({
       {hasProxy && (
         <button
           onClick={onToggleProxy}
-          title={isPlayingProxy
-            ? 'Playing proxy · press P to switch to original'
-            : 'Original · press P to switch to proxy'}
+          title={
+            isPlayingProxy
+              ? 'Playing proxy · press P to switch to original'
+              : 'Original · press P to switch to proxy'
+          }
           className={`flex items-center justify-center w-7 h-7 rounded-lg text-sm font-bold transition-all shrink-0 ${
             isPlayingProxy
               ? 'bg-violet-500/35 text-violet-300 ring-1 ring-violet-400/40 hover:bg-violet-500/50'
@@ -86,7 +105,9 @@ export default function TopBar({
 
       {/* Suite pre-cache badge — always visible; interactive for Suite files only */}
       <button
-        onClick={() => { if (isSuiteFile && !loading && !folderCached) togglePrecache(filePath); }}
+        onClick={() => {
+          if (isSuiteFile && !loading && !folderCached) togglePrecache(filePath);
+        }}
         disabled={!isSuiteFile || loading || folderCached}
         title={
           !isSuiteFile
@@ -112,7 +133,9 @@ export default function TopBar({
         }`}
       >
         {loading ? <SpinnerIcon /> : precached ? <CloudCheckIcon /> : <CloudIcon />}
-        <span>{!isSuiteFile ? 'Local' : loading ? 'Working…' : precached ? 'Cached' : 'Pre-cache'}</span>
+        <span>
+          {!isSuiteFile ? 'Local' : loading ? 'Working…' : precached ? 'Cached' : 'Pre-cache'}
+        </span>
       </button>
 
       {/* Open file */}
@@ -125,23 +148,29 @@ export default function TopBar({
       </button>
 
       {/* Window controls (frameless window) */}
-      <div className="flex items-center gap-0.5 ml-1 shrink-0" onClick={e => e.stopPropagation()}>
+      <div className="flex items-center gap-0.5 ml-1 shrink-0" onClick={(e) => e.stopPropagation()}>
         <button
-          onClick={() => { void minimizeWindow(); }}
+          onClick={() => {
+            void minimizeWindow();
+          }}
           className="flex items-center justify-center w-6 h-6 rounded text-white/40 hover:text-white hover:bg-white/15 transition-colors"
           title="Minimize"
         >
           <MinimizeIcon />
         </button>
         <button
-          onClick={() => { void toggleMaximizeWindow(); }}
+          onClick={() => {
+            void toggleMaximizeWindow();
+          }}
           className="flex items-center justify-center w-6 h-6 rounded text-white/40 hover:text-white hover:bg-white/15 transition-colors"
           title="Maximize"
         >
           <MaximizeIcon />
         </button>
         <button
-          onClick={() => { void closeWindow(); }}
+          onClick={() => {
+            void closeWindow();
+          }}
           className="flex items-center justify-center w-6 h-6 rounded text-white/40 hover:text-white hover:bg-red-500/70 transition-colors"
           title="Close"
         >
@@ -151,12 +180,3 @@ export default function TopBar({
     </div>
   );
 }
-
-
-
-
-
-
-
-
-

@@ -1,12 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { assetUrl, deleteProxy, getProxiesBatch, getThumbnail, listDirectory, listDrives, type DirListing } from '../../api/tauri';
+import {
+  assetUrl,
+  deleteProxy,
+  getProxiesBatch,
+  getThumbnail,
+  listDirectory,
+  listDrives,
+  type DirListing,
+} from '../../api/tauri';
 import { useSuite } from '../../contexts/SuiteContext';
 import { useProxy } from '../../contexts/ProxyContext';
 import { getAssetType } from '../../domain/media';
-import { getDirName, getFileName, getParentDir, normalizeDriveRoot, normalizePath } from '../../domain/path';
+import {
+  getDirName,
+  getFileName,
+  getParentDir,
+  normalizeDriveRoot,
+  normalizePath,
+} from '../../domain/path';
 import ContextMenu, { type ContextMenuItem } from './ContextMenu';
 import DriveSettingsPanel from './DriveSettingsPanel';
-import { BackIcon, CloudCheckIcon, CloudIcon, CloseIcon, FolderIcon, GearIcon, ProxyIcon, SpinnerIcon } from '../icons';
+import {
+  BackIcon,
+  CloudCheckIcon,
+  CloudIcon,
+  CloseIcon,
+  FolderIcon,
+  GearIcon,
+  ProxyIcon,
+  SpinnerIcon,
+} from '../icons';
 
 interface ContextMenuState {
   x: number;
@@ -26,21 +49,45 @@ interface Props {
 }
 
 const EXT_COLORS: Record<string, string> = {
-  mp4: '#1e3a5f', mov: '#1e3a5f', mkv: '#1e3a5f', avi: '#1e3a5f',
-  webm: '#1e3a5f', mxf: '#2a2060',
-  mp3: '#1a3d2b', wav: '#1a3d2b', aiff: '#1a3d2b', aac: '#1a3d2b',
-  flac: '#1a3d2b', ogg: '#1a3d2b',
-  jpg: '#3d1a2b', jpeg: '#3d1a2b', png: '#3d1a2b',
-  tiff: '#3d1a2b', tif: '#3d1a2b', webp: '#3d1a2b',
+  mp4: '#1e3a5f',
+  mov: '#1e3a5f',
+  mkv: '#1e3a5f',
+  avi: '#1e3a5f',
+  webm: '#1e3a5f',
+  mxf: '#2a2060',
+  mp3: '#1a3d2b',
+  wav: '#1a3d2b',
+  aiff: '#1a3d2b',
+  aac: '#1a3d2b',
+  flac: '#1a3d2b',
+  ogg: '#1a3d2b',
+  jpg: '#3d1a2b',
+  jpeg: '#3d1a2b',
+  png: '#3d1a2b',
+  tiff: '#3d1a2b',
+  tif: '#3d1a2b',
+  webp: '#3d1a2b',
 };
 
 export default function Library({
-  isOpen, initialPath, currentFilePath, onboarding, onOnboardingDone, onOpenFile, onClose,
+  isOpen,
+  initialPath,
+  currentFilePath,
+  onboarding,
+  onOnboardingDone,
+  onOpenFile,
+  onClose,
 }: Props) {
   const {
-    suiteRoots, updateSuiteRoots,
-    isSuitePath, isPrecached, precachedEntryFor, isLoading: isSuiteLoading,
-    addToPrecache, removeFromPrecache, togglePrecache,
+    suiteRoots,
+    updateSuiteRoots,
+    isSuitePath,
+    isPrecached,
+    precachedEntryFor,
+    isLoading: isSuiteLoading,
+    addToPrecache,
+    removeFromPrecache,
+    togglePrecache,
   } = useSuite();
   const { queueProxy } = useProxy();
 
@@ -58,7 +105,7 @@ export default function Library({
   }, [onboarding, isOpen]);
 
   // Thumbnail extraction queue — max 3 concurrent ffmpeg instances
-  const thumbQueue   = useRef<string[]>([]);
+  const thumbQueue = useRef<string[]>([]);
   const thumbWorkers = useRef(0);
   const THUMB_CONCURRENCY = 3;
 
@@ -68,9 +115,9 @@ export default function Library({
     const file = thumbQueue.current.shift()!;
     try {
       const p = await getThumbnail(file);
-      setThumbnails(prev => ({ ...prev, [file]: assetUrl(p) }));
+      setThumbnails((prev) => ({ ...prev, [file]: assetUrl(p) }));
     } catch {
-      setThumbnails(prev => ({ ...prev, [file]: null }));
+      setThumbnails((prev) => ({ ...prev, [file]: null }));
     } finally {
       thumbWorkers.current--;
       processThumbQueue();
@@ -101,7 +148,7 @@ export default function Library({
   useEffect(() => {
     if (!listing || !isOpen) return;
     const toLoad = listing.mediaFiles.filter(
-      f => getAssetType(f) === 'video' && thumbnails[f] === undefined
+      (f) => getAssetType(f) === 'video' && thumbnails[f] === undefined,
     );
     thumbQueue.current.push(...toLoad);
     for (let i = 0; i < Math.min(THUMB_CONCURRENCY, toLoad.length); i++) {
@@ -122,11 +169,13 @@ export default function Library({
 
   const handleGenerateAll = useCallback(async () => {
     if (!listing) return;
-    const videoFiles = listing.mediaFiles.filter(f => getAssetType(f) === 'video' && !proxies[f]);
+    const videoFiles = listing.mediaFiles.filter((f) => getAssetType(f) === 'video' && !proxies[f]);
     for (const f of videoFiles) {
-      queueProxy(f).then(proxyPath => {
-        setProxies(prev => ({ ...prev, [f]: proxyPath }));
-      }).catch(() => {});
+      queueProxy(f)
+        .then((proxyPath) => {
+          setProxies((prev) => ({ ...prev, [f]: proxyPath }));
+        })
+        .catch(() => {});
     }
   }, [listing, proxies, queueProxy]);
 
@@ -143,17 +192,22 @@ export default function Library({
   // Fetch drives when settings panel first opens
   useEffect(() => {
     if (!showSettings || allDrives.length > 0) return;
-    listDrives().then(setAllDrives).catch(() => {});
+    listDrives()
+      .then(setAllDrives)
+      .catch(() => {});
   }, [showSettings, allDrives.length]);
 
-  const toggleSuiteRoot = useCallback((drive: string) => {
-    const dNorm = normalizeDriveRoot(drive);
-    const isActive = suiteRoots.some(r => normalizeDriveRoot(r) === dNorm);
-    const next = isActive
-      ? suiteRoots.filter(r => normalizeDriveRoot(r) !== dNorm)
-      : [...suiteRoots, drive.endsWith('\\') || drive.endsWith('/') ? drive : drive + '\\'];
-    updateSuiteRoots(next);
-  }, [suiteRoots, updateSuiteRoots]);
+  const toggleSuiteRoot = useCallback(
+    (drive: string) => {
+      const dNorm = normalizeDriveRoot(drive);
+      const isActive = suiteRoots.some((r) => normalizeDriveRoot(r) === dNorm);
+      const next = isActive
+        ? suiteRoots.filter((r) => normalizeDriveRoot(r) !== dNorm)
+        : [...suiteRoots, drive.endsWith('\\') || drive.endsWith('/') ? drive : drive + '\\'];
+      updateSuiteRoots(next);
+    },
+    [suiteRoots, updateSuiteRoots],
+  );
 
   const openFileContextMenu = useCallback((e: React.MouseEvent, filePath: string) => {
     e.preventDefault();
@@ -167,97 +221,118 @@ export default function Library({
     setContextMenu({ x: e.clientX, y: e.clientY, target: dirPath, type: 'folder' });
   }, []);
 
-  const buildContextItems = useCallback((menu: ContextMenuState): ContextMenuItem[] => {
-    const items: ContextMenuItem[] = [];
+  const buildContextItems = useCallback(
+    (menu: ContextMenuState): ContextMenuItem[] => {
+      const items: ContextMenuItem[] = [];
 
-    if (menu.type === 'folder') {
-      const isSuite = isSuitePath(menu.target);
-      const cached = isPrecached(menu.target);
-      const loading = isSuiteLoading(menu.target);
-      items.push({
-        label: 'Open Folder',
-        onClick: () => loadDir(menu.target),
-      });
-      if (isSuite) {
-        items.push({ label: '──────────', disabled: true, onClick: () => {} });
+      if (menu.type === 'folder') {
+        const isSuite = isSuitePath(menu.target);
+        const cached = isPrecached(menu.target);
+        const loading = isSuiteLoading(menu.target);
         items.push({
-          label: loading ? 'Working…' : cached ? 'Remove from Pre-cache' : 'Pre-cache Folder',
+          label: 'Open Folder',
+          onClick: () => loadDir(menu.target),
+        });
+        if (isSuite) {
+          items.push({ label: '──────────', disabled: true, onClick: () => {} });
+          items.push({
+            label: loading ? 'Working…' : cached ? 'Remove from Pre-cache' : 'Pre-cache Folder',
+            disabled: loading,
+            variant: cached ? 'danger' : 'default',
+            onClick: () =>
+              cached ? removeFromPrecache([menu.target]) : addToPrecache([menu.target]),
+          });
+        }
+        return items;
+      }
+
+      // File context menu
+      const filePath = menu.target;
+      const isVideo = getAssetType(filePath) === 'video';
+      const hasProxy = !!proxies[filePath];
+      const isSuite = isSuitePath(filePath);
+      const cached = isPrecached(filePath);
+      const loading = isSuiteLoading(filePath);
+
+      items.push({
+        label: 'Open',
+        onClick: () => onOpenFile(filePath),
+      });
+
+      if (isVideo) {
+        items.push({ label: '──────────', disabled: true, onClick: () => {} });
+        if (!hasProxy) {
+          items.push({
+            label: 'Generate Proxy',
+            onClick: () => {
+              queueProxy(filePath)
+                .then((p) => setProxies((prev) => ({ ...prev, [filePath]: p })))
+                .catch(() => {});
+            },
+          });
+        } else {
+          items.push({
+            label: 'Delete Proxy',
+            variant: 'danger',
+            onClick: async () => {
+              await deleteProxy(filePath).catch(() => {});
+              setProxies((prev) => {
+                const n = { ...prev };
+                delete n[filePath];
+                return n;
+              });
+            },
+          });
+        }
+      }
+
+      items.push({ label: '──────────', disabled: true, onClick: () => {} });
+      if (isSuite) {
+        items.push({
+          label: loading ? 'Working…' : cached ? 'Remove from Pre-cache' : 'Pre-cache File',
           disabled: loading,
           variant: cached ? 'danger' : 'default',
-          onClick: () => cached
-            ? removeFromPrecache([menu.target])
-            : addToPrecache([menu.target]),
+          onClick: () => togglePrecache(filePath),
         });
-      }
-      return items;
-    }
-
-    // File context menu
-    const filePath = menu.target;
-    const isVideo = getAssetType(filePath) === 'video';
-    const hasProxy = !!proxies[filePath];
-    const isSuite = isSuitePath(filePath);
-    const cached = isPrecached(filePath);
-    const loading = isSuiteLoading(filePath);
-
-    items.push({
-      label: 'Open',
-      onClick: () => onOpenFile(filePath),
-    });
-
-    if (isVideo) {
-      items.push({ label: '──────────', disabled: true, onClick: () => {} });
-      if (!hasProxy) {
+        const parentDir = getParentDir(filePath);
+        const folderCached = isPrecached(parentDir);
+        const folderLoading = isSuiteLoading(parentDir);
         items.push({
-          label: 'Generate Proxy',
-          onClick: () => {
-            queueProxy(filePath).then(p => setProxies(prev => ({ ...prev, [filePath]: p }))).catch(() => {});
-          },
+          label: folderLoading
+            ? 'Working…'
+            : folderCached
+              ? 'Remove Folder Pre-cache'
+              : 'Pre-cache Parent Folder',
+          disabled: folderLoading,
+          onClick: () =>
+            folderCached ? removeFromPrecache([parentDir]) : addToPrecache([parentDir]),
         });
       } else {
-        items.push({
-          label: 'Delete Proxy',
-          variant: 'danger',
-          onClick: async () => {
-            await deleteProxy(filePath).catch(() => {});
-            setProxies(prev => { const n = { ...prev }; delete n[filePath]; return n; });
-          },
-        });
+        items.push({ label: 'Pre-cache File', disabled: true, onClick: () => {} });
       }
-    }
 
-    items.push({ label: '──────────', disabled: true, onClick: () => {} });
-    if (isSuite) {
-      items.push({
-        label: loading ? 'Working…' : cached ? 'Remove from Pre-cache' : 'Pre-cache File',
-        disabled: loading,
-        variant: cached ? 'danger' : 'default',
-        onClick: () => togglePrecache(filePath),
-      });
-      const parentDir = getParentDir(filePath);
-      const folderCached = isPrecached(parentDir);
-      const folderLoading = isSuiteLoading(parentDir);
-      items.push({
-        label: folderLoading ? 'Working…' : folderCached ? 'Remove Folder Pre-cache' : 'Pre-cache Parent Folder',
-        disabled: folderLoading,
-        onClick: () => folderCached
-          ? removeFromPrecache([parentDir])
-          : addToPrecache([parentDir]),
-      });
-    } else {
-      items.push({ label: 'Pre-cache File', disabled: true, onClick: () => {} });
-    }
-
-    return items;
-  }, [proxies, isSuitePath, isPrecached, isSuiteLoading, queueProxy, addToPrecache, removeFromPrecache, togglePrecache, onOpenFile, loadDir]);
+      return items;
+    },
+    [
+      proxies,
+      isSuitePath,
+      isPrecached,
+      isSuiteLoading,
+      queueProxy,
+      addToPrecache,
+      removeFromPrecache,
+      togglePrecache,
+      onOpenFile,
+      loadDir,
+    ],
+  );
 
   const currentDir = listing?.path ?? '';
   const isFolderSuite = isSuitePath(currentDir);
   const isFolderCached = isPrecached(currentDir);
   const isFolderLoading = isSuiteLoading(currentDir);
-  const videoFilesWithoutProxy = listing?.mediaFiles.filter(
-    f => getAssetType(f) === 'video' && !proxies[f]
-  ) ?? [];
+  const videoFilesWithoutProxy =
+    listing?.mediaFiles.filter((f) => getAssetType(f) === 'video' && !proxies[f]) ?? [];
 
   return (
     <>
@@ -287,15 +362,20 @@ export default function Library({
             </button>
           )}
 
-          <span className="flex-1 text-xs text-white/50 truncate font-mono" title={showSettings ? 'Settings' : currentDir}>
-            {showSettings ? 'Suite Drive Settings' : (currentDir || '…')}
+          <span
+            className="flex-1 text-xs text-white/50 truncate font-mono"
+            title={showSettings ? 'Settings' : currentDir}
+          >
+            {showSettings ? 'Suite Drive Settings' : currentDir || '…'}
           </span>
 
           <button
-            onClick={() => setShowSettings(v => !v)}
+            onClick={() => setShowSettings((v) => !v)}
             title="Settings"
             className={`flex items-center justify-center w-7 h-7 rounded transition-colors ${
-              showSettings ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white hover:bg-white/10'
+              showSettings
+                ? 'bg-white/15 text-white'
+                : 'text-white/50 hover:text-white hover:bg-white/10'
             }`}
           >
             <GearIcon />
@@ -310,43 +390,44 @@ export default function Library({
         </div>
 
         {/* Folder toolbar */}
-        {!showSettings && <div className="flex items-center gap-2 px-3 py-2 border-b border-white/8 shrink-0">
-          <button
-            onClick={handleGenerateAll}
-            disabled={videoFilesWithoutProxy.length === 0}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 transition-colors disabled:opacity-30 disabled:pointer-events-none"
-          >
-            <ProxyIcon />
-            Generate All Proxies
-            {videoFilesWithoutProxy.length > 0 && (
-              <span className="bg-violet-500/40 text-violet-200 rounded-full px-1.5 py-0.5 text-[10px] font-bold">
-                {videoFilesWithoutProxy.length}
-              </span>
-            )}
-          </button>
+        {!showSettings && (
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-white/8 shrink-0">
+            <button
+              onClick={handleGenerateAll}
+              disabled={videoFilesWithoutProxy.length === 0}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+            >
+              <ProxyIcon />
+              Generate All Proxies
+              {videoFilesWithoutProxy.length > 0 && (
+                <span className="bg-violet-500/40 text-violet-200 rounded-full px-1.5 py-0.5 text-[10px] font-bold">
+                  {videoFilesWithoutProxy.length}
+                </span>
+              )}
+            </button>
 
-          {isFolderSuite && (
-            isFolderCached ? (
-              <button
-                onClick={handleRemovePrecacheFolder}
-                disabled={isFolderLoading}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-sky-500/25 text-sky-300 hover:bg-sky-500/35 transition-colors disabled:opacity-50"
-              >
-                {isFolderLoading ? <SpinnerIcon /> : <CloudCheckIcon />}
-                Folder Cached
-              </button>
-            ) : (
-              <button
-                onClick={handlePrecacheFolder}
-                disabled={isFolderLoading}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white/10 text-white/50 hover:bg-white/18 hover:text-white/80 transition-colors disabled:opacity-50"
-              >
-                {isFolderLoading ? <SpinnerIcon /> : <CloudIcon />}
-                Pre-cache Folder
-              </button>
-            )
-          )}
-        </div>}
+            {isFolderSuite &&
+              (isFolderCached ? (
+                <button
+                  onClick={handleRemovePrecacheFolder}
+                  disabled={isFolderLoading}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-sky-500/25 text-sky-300 hover:bg-sky-500/35 transition-colors disabled:opacity-50"
+                >
+                  {isFolderLoading ? <SpinnerIcon /> : <CloudCheckIcon />}
+                  Folder Cached
+                </button>
+              ) : (
+                <button
+                  onClick={handlePrecacheFolder}
+                  disabled={isFolderLoading}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white/10 text-white/50 hover:bg-white/18 hover:text-white/80 transition-colors disabled:opacity-50"
+                >
+                  {isFolderLoading ? <SpinnerIcon /> : <CloudIcon />}
+                  Pre-cache Folder
+                </button>
+              ))}
+          </div>
+        )}
 
         {/* Settings panel */}
         {showSettings && (
@@ -363,14 +444,14 @@ export default function Library({
         <div className={`flex flex-1 overflow-hidden ${showSettings ? 'hidden' : ''}`}>
           {/* Left: subdirectories */}
           <div className="w-40 shrink-0 border-r border-white/8 overflow-y-auto py-1">
-            {listing?.subdirs.map(dir => {
+            {listing?.subdirs.map((dir) => {
               const dirSuite = isSuitePath(dir);
               const dirCached = isPrecached(dir);
               return (
                 <button
                   key={dir}
                   onClick={() => loadDir(dir)}
-                  onContextMenu={e => openFolderContextMenu(e, dir)}
+                  onContextMenu={(e) => openFolderContextMenu(e, dir)}
                   className="w-full text-left px-3 py-2 flex items-center gap-2 text-xs text-white/60 hover:text-white hover:bg-white/8 transition-colors"
                 >
                   <FolderIcon />
@@ -392,7 +473,7 @@ export default function Library({
               <p className="px-2 py-4 text-xs text-white/20 text-center">No media files</p>
             )}
             <div className="flex flex-col gap-1">
-              {listing?.mediaFiles.map(file => {
+              {listing?.mediaFiles.map((file) => {
                 const ext = file.split('.').pop()?.toLowerCase() ?? '';
                 const isPlaying = file === currentFilePath;
                 const isSelected = selectedFiles.has(file);
@@ -402,12 +483,13 @@ export default function Library({
                 const cacheLoading = isSuiteLoading(file);
                 const isVideo = getAssetType(file) === 'video';
                 const cachedEntry = precachedEntryFor(file);
-                const folderCached = cachedEntry !== null && normalizePath(cachedEntry) !== normalizePath(file);
+                const folderCached =
+                  cachedEntry !== null && normalizePath(cachedEntry) !== normalizePath(file);
 
                 const handleClick = (e: React.MouseEvent) => {
                   if (e.ctrlKey || e.metaKey) {
                     // Ctrl/Cmd+click: toggle this file in selection
-                    setSelectedFiles(prev => {
+                    setSelectedFiles((prev) => {
                       const next = new Set(prev);
                       if (next.has(file)) next.delete(file);
                       else next.add(file);
@@ -431,11 +513,13 @@ export default function Library({
                     }`}
                     onClick={handleClick}
                     onDoubleClick={() => onOpenFile(file)}
-                    onContextMenu={e => openFileContextMenu(e, file)}
+                    onContextMenu={(e) => openFileContextMenu(e, file)}
                   >
                     {/* Thumbnail or colored type block */}
-                    <div className="shrink-0 w-28 h-16 rounded overflow-hidden relative"
-                      style={{ background: EXT_COLORS[ext] ?? '#2a2a2a' }}>
+                    <div
+                      className="shrink-0 w-28 h-16 rounded overflow-hidden relative"
+                      style={{ background: EXT_COLORS[ext] ?? '#2a2a2a' }}
+                    >
                       {isVideo && thumbnails[file] ? (
                         <img
                           src={thumbnails[file]!}
@@ -485,27 +569,39 @@ export default function Library({
                           title={
                             !isSuite
                               ? 'Not a Suite asset'
-                              : cacheLoading ? 'Working…'
-                              : folderCached ? 'Cached via parent folder'
-                              : cached ? 'Cached — click to remove'
-                              : 'Not pre-cached — click to add'
+                              : cacheLoading
+                                ? 'Working…'
+                                : folderCached
+                                  ? 'Cached via parent folder'
+                                  : cached
+                                    ? 'Cached — click to remove'
+                                    : 'Not pre-cached — click to add'
                           }
                           disabled={!isSuite || cacheLoading || folderCached}
-                          onClick={e => {
+                          onClick={(e) => {
                             e.stopPropagation();
                             if (isSuite && !cacheLoading && !folderCached) togglePrecache(file);
                           }}
-                          onDoubleClick={e => e.stopPropagation()}
+                          onDoubleClick={(e) => e.stopPropagation()}
                           className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
                             !isSuite
                               ? 'text-white/12 cursor-default'
-                              : cacheLoading ? 'text-white/40 cursor-wait'
-                              : folderCached ? 'text-sky-400 cursor-default'
-                              : cached ? 'text-sky-400 hover:text-red-400'
-                              : 'text-white/25 hover:text-sky-400'
+                              : cacheLoading
+                                ? 'text-white/40 cursor-wait'
+                                : folderCached
+                                  ? 'text-sky-400 cursor-default'
+                                  : cached
+                                    ? 'text-sky-400 hover:text-red-400'
+                                    : 'text-white/25 hover:text-sky-400'
                           }`}
                         >
-                          {cacheLoading ? <SpinnerIcon size={11} /> : cached ? <CloudCheckIcon size={11} /> : <CloudIcon size={11} />}
+                          {cacheLoading ? (
+                            <SpinnerIcon size={11} />
+                          ) : cached ? (
+                            <CloudCheckIcon size={11} />
+                          ) : (
+                            <CloudIcon size={11} />
+                          )}
                         </button>
                       </div>
                     </div>

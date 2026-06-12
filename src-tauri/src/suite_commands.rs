@@ -1,7 +1,7 @@
-use std::path::Path;
 use crate::process_tools::quiet_command;
 use crate::proxy_paths::proxies_root_for;
 use crate::AppState;
+use std::path::Path;
 
 // ── Suite commands ────────────────────────────────────────────────────────────
 
@@ -19,11 +19,13 @@ pub(crate) fn set_suite_roots(state: tauri::State<AppState>, roots: Vec<String>)
 pub(crate) fn suite_precache_add(paths: Vec<String>) -> Result<String, String> {
     let mut lines = vec![];
     for path in &paths {
-        let out = run_suite_cmd(&["pre-cache", "add", "--path", path])
-            .map_err(|e| e.to_string())?;
+        let out =
+            run_suite_cmd(&["pre-cache", "add", "--path", path]).map_err(|e| e.to_string())?;
         if !out.status.success() {
-            return Err(format!("suite pre-cache add failed: {}",
-                String::from_utf8_lossy(&out.stderr)));
+            return Err(format!(
+                "suite pre-cache add failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            ));
         }
         lines.push(String::from_utf8_lossy(&out.stdout).into_owned());
     }
@@ -34,11 +36,13 @@ pub(crate) fn suite_precache_add(paths: Vec<String>) -> Result<String, String> {
 pub(crate) fn suite_precache_remove(paths: Vec<String>) -> Result<String, String> {
     let mut lines = vec![];
     for path in &paths {
-        let out = run_suite_cmd(&["pre-cache", "remove", "--path", path])
-            .map_err(|e| e.to_string())?;
+        let out =
+            run_suite_cmd(&["pre-cache", "remove", "--path", path]).map_err(|e| e.to_string())?;
         if !out.status.success() {
-            return Err(format!("suite pre-cache remove failed: {}",
-                String::from_utf8_lossy(&out.stderr)));
+            return Err(format!(
+                "suite pre-cache remove failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            ));
         }
         lines.push(String::from_utf8_lossy(&out.stdout).into_owned());
     }
@@ -67,11 +71,15 @@ pub(crate) fn suite_precache_list() -> Result<Vec<String>, String> {
 #[tauri::command]
 pub(crate) fn precache_proxies_folder(original_path: String) -> Result<(), String> {
     let root = proxies_root_for(Path::new(&original_path))?;
-    if !root.exists() { return Ok(()); }
+    if !root.exists() {
+        return Ok(());
+    }
     let path_str = root.to_string_lossy().into_owned();
-    let out = run_suite_cmd(&["pre-cache", "add", "--path", &path_str])
-        .map_err(|e| e.to_string())?;
-    if out.status.success() { Ok(()) } else {
+    let out =
+        run_suite_cmd(&["pre-cache", "add", "--path", &path_str]).map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(())
+    } else {
         Err(String::from_utf8_lossy(&out.stderr).into_owned())
     }
 }

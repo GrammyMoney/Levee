@@ -21,7 +21,6 @@ export function getProxy(originalPath: string): Promise<string | null> {
   return invoke<string | null>('get_proxy', { originalPath });
 }
 
-
 export interface DirListing {
   path: string;
   parentPath: string | null;
@@ -61,7 +60,6 @@ export function openFolder(path: string): Promise<void> {
   return invoke<void>('open_folder', { path });
 }
 
-
 export function setSuiteRoots(roots: string[]): Promise<void> {
   return invoke<void>('set_suite_roots', { roots });
 }
@@ -78,7 +76,6 @@ export function suitePrecacheRemove(paths: string[]): Promise<string> {
   return invoke<string>('suite_precache_remove', { paths });
 }
 
-
 export function generateProxy(originalPath: string): Promise<string> {
   return invoke<string>('generate_proxy', { originalPath });
 }
@@ -86,7 +83,6 @@ export function generateProxy(originalPath: string): Promise<string> {
 export function precacheProxiesFolder(originalPath: string): Promise<void> {
   return invoke<void>('precache_proxies_folder', { originalPath });
 }
-
 
 export function mpvLoad(path: string): Promise<void> {
   return invoke<void>('mpv_load', { path });

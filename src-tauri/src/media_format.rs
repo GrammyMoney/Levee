@@ -28,7 +28,11 @@ pub(crate) fn parse_frame_rate(s: &str) -> String {
                 let fps = num / den;
                 // Common fractional frame rates
                 let rounded = (fps * 1000.0).round() / 1000.0;
-                return format!("{rounded:.3}").trim_end_matches('0').trim_end_matches('.').to_string() + " fps";
+                return format!("{rounded:.3}")
+                    .trim_end_matches('0')
+                    .trim_end_matches('.')
+                    .to_string()
+                    + " fps";
             }
         }
     }
@@ -37,30 +41,30 @@ pub(crate) fn parse_frame_rate(s: &str) -> String {
 
 pub(crate) fn pretty_codec(raw: &str) -> String {
     match raw.to_lowercase().as_str() {
-        "h264" | "libx264"  => "H.264".to_string(),
+        "h264" | "libx264" => "H.264".to_string(),
         "h265" | "hevc" | "libx265" => "H.265 (HEVC)".to_string(),
-        "prores"            => "Apple ProRes".to_string(),
-        "dnxhd"             => "Avid DNxHD".to_string(),
-        "vp9"               => "VP9".to_string(),
-        "av1"               => "AV1".to_string(),
-        "mpeg2video"        => "MPEG-2".to_string(),
-        "mjpeg"             => "MJPEG".to_string(),
-        "aac"               => "AAC".to_string(),
-        "mp3"               => "MP3".to_string(),
+        "prores" => "Apple ProRes".to_string(),
+        "dnxhd" => "Avid DNxHD".to_string(),
+        "vp9" => "VP9".to_string(),
+        "av1" => "AV1".to_string(),
+        "mpeg2video" => "MPEG-2".to_string(),
+        "mjpeg" => "MJPEG".to_string(),
+        "aac" => "AAC".to_string(),
+        "mp3" => "MP3".to_string(),
         "pcm_s16le" | "pcm_s24le" | "pcm_s32le" => "PCM".to_string(),
-        other               => other.to_uppercase(),
+        other => other.to_uppercase(),
     }
 }
 
 pub(crate) fn pretty_container(fmt_name: &str) -> String {
     let first = fmt_name.split(',').next().unwrap_or(fmt_name);
     match first {
-        "mov"        => "MOV".to_string(),
-        "mp4"        => "MP4".to_string(),
-        "matroska"   => "MKV".to_string(),
-        "avi"        => "AVI".to_string(),
-        "mxf"        => "MXF".to_string(),
-        "webm"       => "WebM".to_string(),
-        other        => other.to_uppercase(),
+        "mov" => "MOV".to_string(),
+        "mp4" => "MP4".to_string(),
+        "matroska" => "MKV".to_string(),
+        "avi" => "AVI".to_string(),
+        "mxf" => "MXF".to_string(),
+        "webm" => "WebM".to_string(),
+        other => other.to_uppercase(),
     }
 }

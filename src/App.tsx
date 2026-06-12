@@ -6,7 +6,13 @@ import { SuiteProvider } from './contexts/SuiteContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { ProxyProvider } from './contexts/ProxyContext';
 import { getSiblingFiles, pickFile, takeLaunchFile } from './api/tauri';
-import { closeWindow, listenForDroppedFile, listenForOpenFile, minimizeWindow, showMainWindowWhenReady } from './api/window';
+import {
+  closeWindow,
+  listenForDroppedFile,
+  listenForOpenFile,
+  minimizeWindow,
+  showMainWindowWhenReady,
+} from './api/window';
 import { CloseIcon, MinimizeIcon } from './components/icons';
 
 export default function App() {
@@ -22,13 +28,16 @@ export default function App() {
     setSiblingFiles(siblings);
   }, []);
 
-  const navigateFile = useCallback((delta: number) => {
-    if (!filePath || siblingFiles.length === 0) return;
-    const idx = siblingFiles.indexOf(filePath);
-    if (idx === -1) return;
-    const next = siblingFiles[(idx + delta + siblingFiles.length) % siblingFiles.length];
-    if (next) openFile(next);
-  }, [filePath, siblingFiles, openFile]);
+  const navigateFile = useCallback(
+    (delta: number) => {
+      if (!filePath || siblingFiles.length === 0) return;
+      const idx = siblingFiles.indexOf(filePath);
+      if (idx === -1) return;
+      const next = siblingFiles[(idx + delta + siblingFiles.length) % siblingFiles.length];
+      if (next) openFile(next);
+    },
+    [filePath, siblingFiles, openFile],
+  );
 
   useEffect(() => {
     let cleanup: (() => void) | undefined;
@@ -36,13 +45,21 @@ export default function App() {
     // Race-free — works regardless of how long the webview took to mount.
     // Keep the splash up (don't reveal DropZone) until we know there's no file.
     takeLaunchFile()
-      .then(p => { if (p) openFile(p); else setCheckedLaunch(true); })
+      .then((p) => {
+        if (p) openFile(p);
+        else setCheckedLaunch(true);
+      })
       .catch(() => setCheckedLaunch(true));
     // Running instance: a second launch forwards the file via this event.
-    listenForOpenFile(openFile).then(u => { cleanup = u; });
-    listenForDroppedFile(openFile).then(u => {
+    listenForOpenFile(openFile).then((u) => {
+      cleanup = u;
+    });
+    listenForDroppedFile(openFile).then((u) => {
       const prev = cleanup;
-      cleanup = () => { prev?.(); u(); };
+      cleanup = () => {
+        prev?.();
+        u();
+      };
     });
     return () => cleanup?.();
   }, [openFile]);
@@ -55,7 +72,9 @@ export default function App() {
       if (!cancelled) setWindowShown(true);
     });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [checkedLaunch, filePath, windowShown]);
 
   const providers = (node: React.ReactNode) => (
@@ -76,10 +95,12 @@ export default function App() {
       return providers(<Splash />);
     }
     return providers(
-      <DropZone onPickFile={async () => {
-        const path = await pickFile().catch(() => null);
-        if (path) openFile(path);
-      }} />
+      <DropZone
+        onPickFile={async () => {
+          const path = await pickFile().catch(() => null);
+          if (path) openFile(path);
+        }}
+      />,
     );
   }
 
@@ -89,7 +110,7 @@ export default function App() {
       onOpenFile={openFile}
       onPrevFile={() => navigateFile(-1)}
       onNextFile={() => navigateFile(1)}
-    />
+    />,
   );
 }
 
@@ -98,16 +119,20 @@ function DropZone({ onPickFile }: { onPickFile: () => void }) {
     <div className="flex flex-col w-full h-full bg-black cursor-default">
       {/* Drag region + window controls (frameless window) */}
       <div data-tauri-drag-region className="flex items-center justify-end px-2 py-2 shrink-0">
-        <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { void minimizeWindow(); }}
+            onClick={() => {
+              void minimizeWindow();
+            }}
             className="flex items-center justify-center w-6 h-6 rounded text-white/30 hover:text-white hover:bg-white/15 transition-colors"
             title="Minimize"
           >
             <MinimizeIcon />
           </button>
           <button
-            onClick={() => { void closeWindow(); }}
+            onClick={() => {
+              void closeWindow();
+            }}
             className="flex items-center justify-center w-6 h-6 rounded text-white/30 hover:text-white hover:bg-red-500/70 transition-colors"
             title="Close"
           >

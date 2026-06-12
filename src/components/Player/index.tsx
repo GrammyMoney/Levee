@@ -27,8 +27,11 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
   const { isVisible, show, hide } = useAutoHide(2000);
   const { isSuitePath, refreshPrecache } = useSuite();
   const {
-    preferProxies, setPreferProxies,
-    defaultPlayerPrompted, suiteOnboarded, setSuiteOnboarded,
+    preferProxies,
+    setPreferProxies,
+    defaultPlayerPrompted,
+    suiteOnboarded,
+    setSuiteOnboarded,
   } = useSettings();
   const { queueProxy } = useProxy();
 
@@ -47,21 +50,30 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
   }, [defaultPlayerPrompted, suiteOnboarded]);
 
   const currentTimeRef = useRef(0);
-  useEffect(() => { currentTimeRef.current = state.currentTime; }, [state.currentTime]);
+  useEffect(() => {
+    currentTimeRef.current = state.currentTime;
+  }, [state.currentTime]);
 
   // Check for an existing proxy when the original file changes
   useEffect(() => {
     if (isSuitePath(filePath)) refreshPrecache();
-    if (getAssetType(filePath) !== 'video') { setProxyPath(null); return; }
+    if (getAssetType(filePath) !== 'video') {
+      setProxyPath(null);
+      return;
+    }
     let cancelled = false;
     getProxy(filePath)
-      .then(p => { if (!cancelled) setProxyPath(p ?? null); })
+      .then((p) => {
+        if (!cancelled) setProxyPath(p ?? null);
+      })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [filePath]);
 
   // The path actually fed to mpv (proxy is just a lighter file mpv plays natively)
-  const activePath = (preferProxies && proxyPath) ? proxyPath : filePath;
+  const activePath = preferProxies && proxyPath ? proxyPath : filePath;
 
   // Load into mpv whenever the active path changes
   const prevPathRef = useRef('');
@@ -74,7 +86,7 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
   const handleToggleProxy = useCallback(() => {
     if (!proxyPath) return;
     const resume = currentTimeRef.current;
-    const next = (!preferProxies && proxyPath) ? proxyPath : filePath;
+    const next = !preferProxies && proxyPath ? proxyPath : filePath;
     setPreferProxies(!preferProxies);
     prevPathRef.current = next;
     openFile(next, resume);
@@ -94,7 +106,8 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
       if (e.key !== 'p' && e.key !== 'P') return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        return;
       e.preventDefault();
       if (proxyPath) handleToggleProxy();
       else handleGenerateProxy();
@@ -153,7 +166,7 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
         controls={controls}
         visible={chromeVisible}
         metaPanelOpen={metaPanelOpen}
-        onToggleMetadata={() => setMetaPanelOpen(v => !v)}
+        onToggleMetadata={() => setMetaPanelOpen((v) => !v)}
       />
 
       <MetadataPanel
@@ -167,8 +180,14 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
         initialPath={filePath}
         currentFilePath={filePath}
         onboarding={onboarding}
-        onOnboardingDone={() => { setOnboarding(false); setSuiteOnboarded(true); }}
-        onOpenFile={path => { onOpenFile(path); setLibraryOpen(false); }}
+        onOnboardingDone={() => {
+          setOnboarding(false);
+          setSuiteOnboarded(true);
+        }}
+        onOpenFile={(path) => {
+          onOpenFile(path);
+          setLibraryOpen(false);
+        }}
         onClose={() => setLibraryOpen(false)}
       />
     </div>

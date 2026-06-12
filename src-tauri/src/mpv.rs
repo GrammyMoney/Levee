@@ -65,15 +65,21 @@ pub type mpv_render_update_fn = extern "C" fn(*mut c_void);
 type FnCreate = unsafe extern "C" fn() -> *mut mpv_handle;
 type FnInitialize = unsafe extern "C" fn(*mut mpv_handle) -> c_int;
 type FnTerminateDestroy = unsafe extern "C" fn(*mut mpv_handle);
-type FnSetOptionString = unsafe extern "C" fn(*mut mpv_handle, *const c_char, *const c_char) -> c_int;
+type FnSetOptionString =
+    unsafe extern "C" fn(*mut mpv_handle, *const c_char, *const c_char) -> c_int;
 type FnCommand = unsafe extern "C" fn(*mut mpv_handle, *const *const c_char) -> c_int;
-type FnSetProperty = unsafe extern "C" fn(*mut mpv_handle, *const c_char, c_int, *mut c_void) -> c_int;
-type FnGetProperty = unsafe extern "C" fn(*mut mpv_handle, *const c_char, c_int, *mut c_void) -> c_int;
+type FnSetProperty =
+    unsafe extern "C" fn(*mut mpv_handle, *const c_char, c_int, *mut c_void) -> c_int;
+type FnGetProperty =
+    unsafe extern "C" fn(*mut mpv_handle, *const c_char, c_int, *mut c_void) -> c_int;
 type FnObserveProperty = unsafe extern "C" fn(*mut mpv_handle, u64, *const c_char, c_int) -> c_int;
 type FnWaitEvent = unsafe extern "C" fn(*mut mpv_handle, f64) -> *mut mpv_event;
 type FnErrorString = unsafe extern "C" fn(c_int) -> *const c_char;
-type FnRenderCreate =
-    unsafe extern "C" fn(*mut *mut mpv_render_context, *mut mpv_handle, *mut mpv_render_param) -> c_int;
+type FnRenderCreate = unsafe extern "C" fn(
+    *mut *mut mpv_render_context,
+    *mut mpv_handle,
+    *mut mpv_render_param,
+) -> c_int;
 type FnRenderSetUpdateCb =
     unsafe extern "C" fn(*mut mpv_render_context, mpv_render_update_fn, *mut c_void);
 type FnRenderRender = unsafe extern "C" fn(*mut mpv_render_context, *mut mpv_render_param) -> c_int;
@@ -119,10 +125,19 @@ fn find_libmpv() -> Option<PathBuf> {
             // bundled installer layout (Tauri resource dir)
             candidates.push(dir.join("resources").join("binaries").join("libmpv-2.dll"));
             // dev: target/debug/levee.exe -> ../../binaries
-            candidates.push(dir.join("..").join("..").join("binaries").join("libmpv-2.dll"));
+            candidates.push(
+                dir.join("..")
+                    .join("..")
+                    .join("binaries")
+                    .join("libmpv-2.dll"),
+            );
         }
     }
-    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries").join("libmpv-2.dll"));
+    candidates.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("binaries")
+            .join("libmpv-2.dll"),
+    );
     candidates.into_iter().find(|p| p.exists())
 }
 
@@ -131,9 +146,8 @@ pub fn load() -> Result<(), String> {
     if MPV.get().is_some() {
         return Ok(());
     }
-    let path = find_libmpv().ok_or_else(|| {
-        "libmpv-2.dll not found — expected in src-tauri/binaries/".to_string()
-    })?;
+    let path = find_libmpv()
+        .ok_or_else(|| "libmpv-2.dll not found — expected in src-tauri/binaries/".to_string())?;
 
     // Make sure dependent DLLs next to libmpv resolve.
     #[cfg(windows)]
@@ -151,9 +165,9 @@ pub fn load() -> Result<(), String> {
 
         macro_rules! sym {
             ($name:expr) => {
-                *library
-                    .get($name)
-                    .map_err(|e| format!("missing symbol {}: {e}", String::from_utf8_lossy($name)))?
+                *library.get($name).map_err(|e| {
+                    format!("missing symbol {}: {e}", String::from_utf8_lossy($name))
+                })?
             };
         }
 
@@ -257,18 +271,36 @@ impl Handle {
         let n = CString::new(name).unwrap();
         let mut v: c_int = if val { 1 } else { 0 };
         let rc = unsafe {
-            (lib().set_property)(self.0, n.as_ptr(), MPV_FORMAT_FLAG, &mut v as *mut _ as *mut c_void)
+            (lib().set_property)(
+                self.0,
+                n.as_ptr(),
+                MPV_FORMAT_FLAG,
+                &mut v as *mut _ as *mut c_void,
+            )
         };
-        if rc < 0 { Err(err_str(rc)) } else { Ok(()) }
+        if rc < 0 {
+            Err(err_str(rc))
+        } else {
+            Ok(())
+        }
     }
 
     pub fn set_double(&self, name: &str, val: f64) -> Result<(), String> {
         let n = CString::new(name).unwrap();
         let mut v = val;
         let rc = unsafe {
-            (lib().set_property)(self.0, n.as_ptr(), MPV_FORMAT_DOUBLE, &mut v as *mut _ as *mut c_void)
+            (lib().set_property)(
+                self.0,
+                n.as_ptr(),
+                MPV_FORMAT_DOUBLE,
+                &mut v as *mut _ as *mut c_void,
+            )
         };
-        if rc < 0 { Err(err_str(rc)) } else { Ok(()) }
+        if rc < 0 {
+            Err(err_str(rc))
+        } else {
+            Ok(())
+        }
     }
 
     pub fn set_string(&self, name: &str, val: &str) -> Result<(), String> {
@@ -278,19 +310,32 @@ impl Handle {
         // MPV_FORMAT_STRING expects a char** (pointer to the string pointer)
         let mut sp = ptr;
         let rc = unsafe {
-            (lib().set_property)(self.0, n.as_ptr(), MPV_FORMAT_STRING, &mut sp as *mut _ as *mut c_void)
+            (lib().set_property)(
+                self.0,
+                n.as_ptr(),
+                MPV_FORMAT_STRING,
+                &mut sp as *mut _ as *mut c_void,
+            )
         };
         let _ = &mut v;
-        if rc < 0 { Err(err_str(rc)) } else { Ok(()) }
+        if rc < 0 {
+            Err(err_str(rc))
+        } else {
+            Ok(())
+        }
     }
 
     pub fn observe_double(&self, id: u64, name: &str) {
         let n = CString::new(name).unwrap();
-        unsafe { (lib().observe_property)(self.0, id, n.as_ptr(), MPV_FORMAT_DOUBLE); }
+        unsafe {
+            (lib().observe_property)(self.0, id, n.as_ptr(), MPV_FORMAT_DOUBLE);
+        }
     }
     pub fn observe_flag(&self, id: u64, name: &str) {
         let n = CString::new(name).unwrap();
-        unsafe { (lib().observe_property)(self.0, id, n.as_ptr(), MPV_FORMAT_FLAG); }
+        unsafe {
+            (lib().observe_property)(self.0, id, n.as_ptr(), MPV_FORMAT_FLAG);
+        }
     }
 
     /// Blocking event wait. Returns a reference valid until the next wait call.
@@ -312,8 +357,14 @@ impl RenderCtx {
     pub fn create_sw(handle: Handle) -> Result<RenderCtx, String> {
         let api = CString::new("sw").unwrap();
         let mut params = [
-            mpv_render_param { type_: MPV_RENDER_PARAM_API_TYPE, data: api.as_ptr() as *mut c_void },
-            mpv_render_param { type_: MPV_RENDER_PARAM_INVALID, data: std::ptr::null_mut() },
+            mpv_render_param {
+                type_: MPV_RENDER_PARAM_API_TYPE,
+                data: api.as_ptr() as *mut c_void,
+            },
+            mpv_render_param {
+                type_: MPV_RENDER_PARAM_INVALID,
+                data: std::ptr::null_mut(),
+            },
         ];
         let mut ctx: *mut mpv_render_context = std::ptr::null_mut();
         let rc = unsafe { (lib().render_create)(&mut ctx, handle.0, params.as_mut_ptr()) };
@@ -333,11 +384,26 @@ impl RenderCtx {
         let fmt = CString::new("bgr0").unwrap();
         let mut stride_v = stride;
         let mut params = [
-            mpv_render_param { type_: MPV_RENDER_PARAM_SW_SIZE,    data: size.as_mut_ptr() as *mut c_void },
-            mpv_render_param { type_: MPV_RENDER_PARAM_SW_FORMAT,  data: fmt.as_ptr() as *mut c_void },
-            mpv_render_param { type_: MPV_RENDER_PARAM_SW_STRIDE,  data: &mut stride_v as *mut _ as *mut c_void },
-            mpv_render_param { type_: MPV_RENDER_PARAM_SW_POINTER, data: buf },
-            mpv_render_param { type_: MPV_RENDER_PARAM_INVALID,    data: std::ptr::null_mut() },
+            mpv_render_param {
+                type_: MPV_RENDER_PARAM_SW_SIZE,
+                data: size.as_mut_ptr() as *mut c_void,
+            },
+            mpv_render_param {
+                type_: MPV_RENDER_PARAM_SW_FORMAT,
+                data: fmt.as_ptr() as *mut c_void,
+            },
+            mpv_render_param {
+                type_: MPV_RENDER_PARAM_SW_STRIDE,
+                data: &mut stride_v as *mut _ as *mut c_void,
+            },
+            mpv_render_param {
+                type_: MPV_RENDER_PARAM_SW_POINTER,
+                data: buf,
+            },
+            mpv_render_param {
+                type_: MPV_RENDER_PARAM_INVALID,
+                data: std::ptr::null_mut(),
+            },
         ];
         unsafe { (lib().render_render)(self.0, params.as_mut_ptr()) }
     }

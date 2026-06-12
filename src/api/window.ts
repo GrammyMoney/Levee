@@ -14,7 +14,7 @@ function defaultScheduleFrame(callback: FrameRequestCallback): number {
 export function showMainWindowWhenReady(
   scheduleFrame: ScheduleFrame = defaultScheduleFrame,
 ): Promise<void> {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     scheduleFrame(() => {
       void getCurrentWindow().show().finally(resolve);
     });
@@ -34,14 +34,14 @@ export function closeWindow(): Promise<void> {
 }
 
 export function listenForOpenFile(onOpenFile: (path: string) => void): Promise<Unlisten> {
-  return getCurrentWindow().listen<string[]>('open-file', event => {
+  return getCurrentWindow().listen<string[]>('open-file', (event) => {
     const [path] = event.payload;
     if (path) onOpenFile(path);
   });
 }
 
 export function listenForDroppedFile(onOpenFile: (path: string) => void): Promise<Unlisten> {
-  return getCurrentWindow().onDragDropEvent(event => {
+  return getCurrentWindow().onDragDropEvent((event) => {
     if (event.payload.type === 'drop') {
       const [path] = event.payload.paths;
       if (path) onOpenFile(path);

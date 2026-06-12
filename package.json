@@ -10,7 +10,9 @@
     "tauri": "tauri",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepare:binaries": "node scripts/prepare-binaries.js"
+    "prepare:binaries": "node scripts/prepare-binaries.js",
+    "format": "prettier --write . && cargo fmt --manifest-path src-tauri/Cargo.toml",
+    "format:check": "prettier --check . && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -25,6 +27,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",
+    "prettier": "^3.8.4",
     "tailwindcss": "^4",
     "typescript": "~5.8",
     "vitest": "^3.2.6"

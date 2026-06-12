@@ -4,9 +4,8 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 const MEDIA_EXTENSIONS: &[&str] = &[
-    "mp4", "mov", "mxf", "mkv", "avi", "webm",
-    "mp3", "wav", "aiff", "aac", "flac", "ogg",
-    "jpg", "jpeg", "png", "tiff", "tif", "webp",
+    "mp4", "mov", "mxf", "mkv", "avi", "webm", "mp3", "wav", "aiff", "aac", "flac", "ogg", "jpg",
+    "jpeg", "png", "tiff", "tif", "webp",
 ];
 
 // ── File utilities ────────────────────────────────────────────────────────────
@@ -58,7 +57,9 @@ pub(crate) fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), Str
         .parent()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or(path);
-    app.opener().open_path(dir, None::<&str>).map_err(|e| e.to_string())
+    app.opener()
+        .open_path(dir, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 /// Opens the Windows "Default apps" settings so the user can make Levee the
 /// default handler for video files. Win10/11 require the user to confirm the
@@ -138,7 +139,8 @@ pub(crate) fn list_directory(path: String) -> Result<DirListing, String> {
         if ft.is_dir() {
             subdirs.push(full);
         } else if ft.is_file() {
-            let ext = entry.path()
+            let ext = entry
+                .path()
                 .extension()
                 .and_then(|e| e.to_str())
                 .map(|e| e.to_lowercase())
@@ -152,7 +154,12 @@ pub(crate) fn list_directory(path: String) -> Result<DirListing, String> {
     subdirs.sort();
     media_files.sort();
 
-    Ok(DirListing { path, parent_path, subdirs, media_files })
+    Ok(DirListing {
+        path,
+        parent_path,
+        subdirs,
+        media_files,
+    })
 }
 /// Returns all mounted drive roots (Windows: A:\–Z:\; macOS: /Volumes/*).
 #[tauri::command]
@@ -162,7 +169,11 @@ pub(crate) fn list_drives() -> Vec<String> {
         ('A'..='Z')
             .filter_map(|c| {
                 let path = format!("{}:\\", c);
-                if std::path::Path::new(&path).exists() { Some(path) } else { None }
+                if std::path::Path::new(&path).exists() {
+                    Some(path)
+                } else {
+                    None
+                }
             })
             .collect()
     }
