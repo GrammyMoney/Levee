@@ -23,13 +23,9 @@ pub struct mpv_render_context {
 pub const MPV_FORMAT_NONE: c_int = 0;
 pub const MPV_FORMAT_STRING: c_int = 1;
 pub const MPV_FORMAT_FLAG: c_int = 3;
-pub const MPV_FORMAT_INT64: c_int = 4;
 pub const MPV_FORMAT_DOUBLE: c_int = 5;
 
-pub const MPV_EVENT_NONE: c_int = 0;
 pub const MPV_EVENT_SHUTDOWN: c_int = 1;
-pub const MPV_EVENT_END_FILE: c_int = 7;
-pub const MPV_EVENT_FILE_LOADED: c_int = 8;
 pub const MPV_EVENT_PROPERTY_CHANGE: c_int = 22;
 
 pub const MPV_RENDER_PARAM_INVALID: c_int = 0;
@@ -64,13 +60,10 @@ pub type mpv_render_update_fn = extern "C" fn(*mut c_void);
 // ── Function pointer types ──────────────────────────────────────────────────
 type FnCreate = unsafe extern "C" fn() -> *mut mpv_handle;
 type FnInitialize = unsafe extern "C" fn(*mut mpv_handle) -> c_int;
-type FnTerminateDestroy = unsafe extern "C" fn(*mut mpv_handle);
 type FnSetOptionString =
     unsafe extern "C" fn(*mut mpv_handle, *const c_char, *const c_char) -> c_int;
 type FnCommand = unsafe extern "C" fn(*mut mpv_handle, *const *const c_char) -> c_int;
 type FnSetProperty =
-    unsafe extern "C" fn(*mut mpv_handle, *const c_char, c_int, *mut c_void) -> c_int;
-type FnGetProperty =
     unsafe extern "C" fn(*mut mpv_handle, *const c_char, c_int, *mut c_void) -> c_int;
 type FnObserveProperty = unsafe extern "C" fn(*mut mpv_handle, u64, *const c_char, c_int) -> c_int;
 type FnWaitEvent = unsafe extern "C" fn(*mut mpv_handle, f64) -> *mut mpv_event;
@@ -90,11 +83,9 @@ pub struct MpvLib {
     _lib: libloading::Library, // kept alive for the process lifetime
     create: FnCreate,
     initialize: FnInitialize,
-    terminate_destroy: FnTerminateDestroy,
     set_option_string: FnSetOptionString,
     command: FnCommand,
     set_property: FnSetProperty,
-    get_property: FnGetProperty,
     observe_property: FnObserveProperty,
     wait_event: FnWaitEvent,
     error_string: FnErrorString,
@@ -174,11 +165,9 @@ pub fn load() -> Result<(), String> {
         let mpvlib = MpvLib {
             create: sym!(b"mpv_create\0"),
             initialize: sym!(b"mpv_initialize\0"),
-            terminate_destroy: sym!(b"mpv_terminate_destroy\0"),
             set_option_string: sym!(b"mpv_set_option_string\0"),
             command: sym!(b"mpv_command\0"),
             set_property: sym!(b"mpv_set_property\0"),
-            get_property: sym!(b"mpv_get_property\0"),
             observe_property: sym!(b"mpv_observe_property\0"),
             wait_event: sym!(b"mpv_wait_event\0"),
             error_string: sym!(b"mpv_error_string\0"),
@@ -341,10 +330,6 @@ impl Handle {
     /// Blocking event wait. Returns a reference valid until the next wait call.
     pub unsafe fn wait_event(&self, timeout: f64) -> *mut mpv_event {
         (lib().wait_event)(self.0, timeout)
-    }
-
-    pub fn destroy(&self) {
-        unsafe { (lib().terminate_destroy)(self.0) }
     }
 }
 

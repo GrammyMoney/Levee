@@ -1,8 +1,8 @@
 export type AssetType = 'video' | 'audio' | 'image' | 'unknown';
 
-export const VIDEO_EXTENSIONS = ['mp4', 'mov', 'mxf', 'mkv', 'avi', 'webm'] as const;
-export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'aiff', 'aac', 'flac', 'ogg'] as const;
-export const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'tiff', 'tif', 'webp'] as const;
+const VIDEO_EXTENSIONS = ['mp4', 'mov', 'mxf', 'mkv', 'avi', 'webm'] as const;
+const AUDIO_EXTENSIONS = ['mp3', 'wav', 'aiff', 'aac', 'flac', 'ogg'] as const;
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'tiff', 'tif', 'webp'] as const;
 
 export function getAssetType(filePath: string): AssetType {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
