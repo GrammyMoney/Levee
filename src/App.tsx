@@ -7,12 +7,14 @@ import { SuiteProvider } from './contexts/SuiteContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { ProxyProvider } from './contexts/ProxyContext';
 import { getSiblingFiles, pickFile, takeLaunchFile } from './api/tauri';
+import { showMainWindowWhenReady } from './api/window';
 
 export default function App() {
   const [filePath, setFilePath] = useState<string | null>(null);
   const [siblingFiles, setSiblingFiles] = useState<string[]>([]);
   // False until we've checked for a launch file; gates the splash vs DropZone.
   const [checkedLaunch, setCheckedLaunch] = useState(false);
+  const [windowShown, setWindowShown] = useState(false);
 
   const openFile = useCallback(async (path: string) => {
     setFilePath(path);
@@ -47,6 +49,17 @@ export default function App() {
       .then(u => { const prev = cleanup; cleanup = () => { prev?.(); u(); }; });
     return () => cleanup?.();
   }, [openFile]);
+
+  useEffect(() => {
+    if (windowShown || (!checkedLaunch && !filePath)) return;
+
+    let cancelled = false;
+    showMainWindowWhenReady().then(() => {
+      if (!cancelled) setWindowShown(true);
+    });
+
+    return () => { cancelled = true; };
+  }, [checkedLaunch, filePath, windowShown]);
 
   const providers = (node: React.ReactNode) => (
     <SettingsProvider>
