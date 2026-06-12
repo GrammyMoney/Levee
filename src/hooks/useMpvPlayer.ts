@@ -1,19 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { listen } from '@tauri-apps/api/event';
 import { mpvFrameStep, mpvLoad, mpvSeek, mpvSeekBy, mpvSetLoop, mpvSetMute, mpvSetPause, mpvSetSpeed, mpvSetVolume } from '../api/tauri';
+import { listenMpvState } from '../api/events';
 import type { VideoPlayerState, VideoPlayerControls } from './useVideoPlayer';
 
 export { PLAYBACK_RATES } from './useVideoPlayer';
-
-// Raw state emitted by the Rust event-pump thread (serde camelCase).
-interface MpvRawState {
-  timePos: number;
-  duration: number;
-  paused: boolean;
-  volume: number; // 0–100
-  speed: number;
-  eof: boolean;
-}
 
 const PLAYBACK_RATES_MPV = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -34,7 +24,7 @@ export function useMpvPlayer() {
   const pendingSeekRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const unlisten = listen<MpvRawState>('mpv-state', ({ payload: s }) => {
+    const unlisten = listenMpvState(s => {
       // Apply a pending resume seek once the new file has a known duration.
       if (pendingSeekRef.current != null && s.duration > 0) {
         const t = pendingSeekRef.current;

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { convertFileSrc } from '@tauri-apps/api/core';
-import { deleteProxy, getProxiesBatch, getThumbnail, listDirectory, listDrives, openUrl, setAsDefaultPlayer, type DirListing } from '../../api/tauri';
+import { assetUrl, deleteProxy, getProxiesBatch, getThumbnail, listDirectory, listDrives, openUrl, setAsDefaultPlayer, type DirListing } from '../../api/tauri';
 import { useSuite } from '../../contexts/SuiteContext';
 import { useProxy } from '../../contexts/ProxyContext';
 import { getAssetType } from '../../domain/media';
@@ -68,7 +67,7 @@ export default function Library({
     const file = thumbQueue.current.shift()!;
     try {
       const p = await getThumbnail(file);
-      setThumbnails(prev => ({ ...prev, [file]: convertFileSrc(p) }));
+      setThumbnails(prev => ({ ...prev, [file]: assetUrl(p) }));
     } catch {
       setThumbnails(prev => ({ ...prev, [file]: null }));
     } finally {

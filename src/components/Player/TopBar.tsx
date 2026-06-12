@@ -1,7 +1,7 @@
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { CloudCheckIcon, CloudIcon, CloseIcon, ExternalLinkIcon, FolderIcon, MaximizeIcon, MinimizeIcon, OpenFileIcon, SpinnerIcon } from '../icons';
 import { useSuite } from '../../contexts/SuiteContext';
 import { openFolder } from '../../api/tauri';
+import { closeWindow, minimizeWindow, toggleMaximizeWindow } from '../../api/window';
 
 interface Props {
   fileName: string;
@@ -31,7 +31,6 @@ export default function TopBar({
     openFolder(filePath).catch(() => {});
   };
 
-  const win = getCurrentWindow();
 
   return (
     <div
@@ -128,21 +127,21 @@ export default function TopBar({
       {/* Window controls (frameless window) */}
       <div className="flex items-center gap-0.5 ml-1 shrink-0" onClick={e => e.stopPropagation()}>
         <button
-          onClick={() => win.minimize()}
+          onClick={() => { void minimizeWindow(); }}
           className="flex items-center justify-center w-6 h-6 rounded text-white/40 hover:text-white hover:bg-white/15 transition-colors"
           title="Minimize"
         >
           <MinimizeIcon />
         </button>
         <button
-          onClick={() => win.toggleMaximize()}
+          onClick={() => { void toggleMaximizeWindow(); }}
           className="flex items-center justify-center w-6 h-6 rounded text-white/40 hover:text-white hover:bg-white/15 transition-colors"
           title="Maximize"
         >
           <MaximizeIcon />
         </button>
         <button
-          onClick={() => win.close()}
+          onClick={() => { void closeWindow(); }}
           className="flex items-center justify-center w-6 h-6 rounded text-white/40 hover:text-white hover:bg-red-500/70 transition-colors"
           title="Close"
         >

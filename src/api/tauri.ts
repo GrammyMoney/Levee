@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import type { ProbeData } from '../domain/media';
 
 export function pickFile(): Promise<string | null> {
@@ -122,4 +122,8 @@ export function mpvSetSpeed(speed: number): Promise<void> {
 
 export function mpvSetLoop(looping: boolean): Promise<void> {
   return invoke<void>('mpv_set_loop', { looping });
+}
+
+export function assetUrl(path: string): string {
+  return convertFileSrc(path);
 }

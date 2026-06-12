@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from 'react';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import Player from './components/Player';
 import Splash from './components/Splash';
 import DefaultPlayerPrompt from './components/DefaultPlayerPrompt';
@@ -7,7 +6,7 @@ import { SuiteProvider } from './contexts/SuiteContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { ProxyProvider } from './contexts/ProxyContext';
 import { getSiblingFiles, pickFile, takeLaunchFile } from './api/tauri';
-import { showMainWindowWhenReady } from './api/window';
+import { closeWindow, listenForDroppedFile, listenForOpenFile, minimizeWindow, showMainWindowWhenReady } from './api/window';
 import { CloseIcon, MinimizeIcon } from './components/icons';
 
 export default function App() {
@@ -40,14 +39,11 @@ export default function App() {
       .then(p => { if (p) openFile(p); else setCheckedLaunch(true); })
       .catch(() => setCheckedLaunch(true));
     // Running instance: a second launch forwards the file via this event.
-    getCurrentWindow()
-      .listen<string[]>('open-file', e => { if (e.payload[0]) openFile(e.payload[0]); })
-      .then(u => { cleanup = u; });
-    getCurrentWindow()
-      .onDragDropEvent(e => {
-        if (e.payload.type === 'drop' && e.payload.paths.length > 0) openFile(e.payload.paths[0]);
-      })
-      .then(u => { const prev = cleanup; cleanup = () => { prev?.(); u(); }; });
+    listenForOpenFile(openFile).then(u => { cleanup = u; });
+    listenForDroppedFile(openFile).then(u => {
+      const prev = cleanup;
+      cleanup = () => { prev?.(); u(); };
+    });
     return () => cleanup?.();
   }, [openFile]);
 
@@ -98,21 +94,20 @@ export default function App() {
 }
 
 function DropZone({ onPickFile }: { onPickFile: () => void }) {
-  const win = getCurrentWindow();
   return (
     <div className="flex flex-col w-full h-full bg-black cursor-default">
       {/* Drag region + window controls (frameless window) */}
       <div data-tauri-drag-region className="flex items-center justify-end px-2 py-2 shrink-0">
         <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
           <button
-            onClick={() => win.minimize()}
+            onClick={() => { void minimizeWindow(); }}
             className="flex items-center justify-center w-6 h-6 rounded text-white/30 hover:text-white hover:bg-white/15 transition-colors"
             title="Minimize"
           >
             <MinimizeIcon />
           </button>
           <button
-            onClick={() => win.close()}
+            onClick={() => { void closeWindow(); }}
             className="flex items-center justify-center w-6 h-6 rounded text-white/30 hover:text-white hover:bg-red-500/70 transition-colors"
             title="Close"
           >
