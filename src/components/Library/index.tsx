@@ -4,6 +4,7 @@ import { deleteProxy, getProxiesBatch, getThumbnail, listDirectory, listDrives, 
 import { useSuite } from '../../contexts/SuiteContext';
 import { useProxy } from '../../contexts/ProxyContext';
 import { getAssetType } from '../../domain/media';
+import { getDirName, getFileName, getParentDir, normalizeDriveRoot, normalizePath } from '../../domain/path';
 import ContextMenu, { type ContextMenuItem } from './ContextMenu';
 import { BackIcon, CloudCheckIcon, CloudIcon, CloseIcon, FolderIcon, GearIcon, ProxyIcon, SpinnerIcon } from '../icons';
 
@@ -24,21 +25,6 @@ interface Props {
   onClose: () => void;
 }
 
-function getFileName(p: string) {
-  return p.replace(/\\/g, '/').split('/').pop() ?? p;
-}
-
-function getDirName(p: string) {
-  return p.replace(/\\/g, '/').split('/').pop() ?? p;
-}
-
-function getDirPath(filePath: string): string {
-  const parts = filePath.replace(/\\/g, '/').split('/');
-  parts.pop();
-  const dir = filePath.includes('\\') ? parts.join('\\') : parts.join('/') || '/';
-  return /^[A-Za-z]:$/.test(dir) ? dir + '\\' : dir;
-}
-
 const EXT_COLORS: Record<string, string> = {
   mp4: '#1e3a5f', mov: '#1e3a5f', mkv: '#1e3a5f', avi: '#1e3a5f',
   webm: '#1e3a5f', mxf: '#2a2060',
@@ -56,7 +42,6 @@ export default function Library({
     isSuitePath, isPrecached, precachedEntryFor, isLoading: isSuiteLoading,
     addToPrecache, removeFromPrecache, togglePrecache,
   } = useSuite();
-  const normPath = (p: string) => p.toLowerCase().replace(/\\/g, '/');
   const { queueProxy } = useProxy();
 
   const [listing, setListing] = useState<DirListing | null>(null);
@@ -109,7 +94,7 @@ export default function Library({
   }, []);
 
   useEffect(() => {
-    if (isOpen) loadDir(getDirPath(initialPath));
+    if (isOpen) loadDir(getParentDir(initialPath));
   }, [isOpen, initialPath]);
 
   // Queue thumbnail extraction whenever listing changes
@@ -162,11 +147,10 @@ export default function Library({
   }, [showSettings, allDrives.length]);
 
   const toggleSuiteRoot = useCallback((drive: string) => {
-    const norm = (p: string) => p.toLowerCase().replace(/\\/g, '/');
-    const dNorm = norm(drive.endsWith('\\') || drive.endsWith('/') ? drive : drive + '\\');
-    const isActive = suiteRoots.some(r => norm(r.endsWith('\\') || r.endsWith('/') ? r : r + '\\') === dNorm);
+    const dNorm = normalizeDriveRoot(drive);
+    const isActive = suiteRoots.some(r => normalizeDriveRoot(r) === dNorm);
     const next = isActive
-      ? suiteRoots.filter(r => norm(r.endsWith('\\') || r.endsWith('/') ? r : r + '\\') !== dNorm)
+      ? suiteRoots.filter(r => normalizeDriveRoot(r) !== dNorm)
       : [...suiteRoots, drive.endsWith('\\') || drive.endsWith('/') ? drive : drive + '\\'];
     updateSuiteRoots(next);
   }, [suiteRoots, updateSuiteRoots]);
@@ -250,7 +234,7 @@ export default function Library({
         variant: cached ? 'danger' : 'default',
         onClick: () => togglePrecache(filePath),
       });
-      const parentDir = getDirPath(filePath);
+      const parentDir = getParentDir(filePath);
       const folderCached = isPrecached(parentDir);
       const folderLoading = isSuiteLoading(parentDir);
       items.push({
@@ -418,7 +402,7 @@ export default function Library({
                 const cacheLoading = isSuiteLoading(file);
                 const isVideo = getAssetType(file) === 'video';
                 const cachedEntry = precachedEntryFor(file);
-                const folderCached = cachedEntry !== null && normPath(cachedEntry) !== normPath(file);
+                const folderCached = cachedEntry !== null && normalizePath(cachedEntry) !== normalizePath(file);
 
                 const handleClick = (e: React.MouseEvent) => {
                   if (e.ctrlKey || e.metaKey) {
@@ -556,9 +540,8 @@ function DriveSettingsPanel({
   onOnboardingDone?: () => void;
   onToggle: (drive: string) => void;
 }) {
-  const norm = (p: string) => p.toLowerCase().replace(/\\/g, '/').replace(/\/$/, '');
   const isActive = (drive: string) =>
-    suiteRoots.some(r => norm(r) === norm(drive));
+    suiteRoots.some(r => normalizeDriveRoot(r) === normalizeDriveRoot(drive));
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">

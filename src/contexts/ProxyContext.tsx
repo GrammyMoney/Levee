@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useRef, useState } from 'react'
 import { generateProxy, precacheProxiesFolder } from '../api/tauri';
 import { createPortal } from 'react-dom';
 import { CheckIcon, ClockIcon, ErrorIcon, SpinnerIcon } from '../components/icons';
+import { getFileName } from '../domain/path';
 
 type JobStatus = 'queued' | 'generating' | 'done' | 'error';
 
@@ -83,7 +84,7 @@ export function ProxyProvider({ children }: { children: React.ReactNode }) {
 
   const queueProxy = useCallback((originalPath: string): Promise<string> => {
     const id       = crypto.randomUUID();
-    const fileName = originalPath.replace(/\\/g, '/').split('/').pop() ?? originalPath;
+    const fileName = getFileName(originalPath);
 
     return new Promise<string>((resolve, reject) => {
       setJobs(prev => [...prev, { id, fileName, originalPath, status: 'queued' }]);
