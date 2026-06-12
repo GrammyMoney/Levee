@@ -1,11 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { mpvFrameStep, mpvLoad, mpvSeek, mpvSeekBy, mpvSetLoop, mpvSetMute, mpvSetPause, mpvSetSpeed, mpvSetVolume } from '../api/tauri';
 import { listenMpvState } from '../api/events';
-import type { VideoPlayerState, VideoPlayerControls } from './useVideoPlayer';
-
-export { PLAYBACK_RATES } from './useVideoPlayer';
-
-const PLAYBACK_RATES_MPV = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
+import { PLAYBACK_RATES, type VideoPlayerState, type VideoPlayerControls } from '../domain/player';
 
 export function useMpvPlayer() {
   const [state, setState] = useState<VideoPlayerState>({
@@ -92,11 +88,11 @@ export function useMpvPlayer() {
 
   const cyclePlaybackRate = useCallback((direction: 1 | -1) => {
     setState(prev => {
-      const idx = PLAYBACK_RATES_MPV.indexOf(prev.playbackRate);
+      const idx = PLAYBACK_RATES.indexOf(prev.playbackRate);
       const next = idx === -1
         ? 3
-        : Math.max(0, Math.min(PLAYBACK_RATES_MPV.length - 1, idx + direction));
-      setPlaybackRate(PLAYBACK_RATES_MPV[next]);
+        : Math.max(0, Math.min(PLAYBACK_RATES.length - 1, idx + direction));
+      setPlaybackRate(PLAYBACK_RATES[next]);
       return prev;
     });
   }, [setPlaybackRate]);

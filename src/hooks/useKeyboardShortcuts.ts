@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { VideoPlayerControls } from './useVideoPlayer';
+import { VideoPlayerControls } from '../domain/player';
 
 interface ShortcutHandlers extends VideoPlayerControls {
   prevFile: () => void;

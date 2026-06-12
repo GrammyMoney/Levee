@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { GearIcon, MetadataIcon, PauseIcon, PlayIcon, VolumeIcon } from '../icons';
-import { VideoPlayerState, VideoPlayerControls, PLAYBACK_RATES } from '../../hooks/useVideoPlayer';
+import { VideoPlayerState, VideoPlayerControls, PLAYBACK_RATES } from '../../domain/player';
 
 interface Props {
   state: VideoPlayerState;
