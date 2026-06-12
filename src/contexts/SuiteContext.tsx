@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { setSuiteRoots as setSuiteRootsCommand, suitePrecacheAdd, suitePrecacheList, suitePrecacheRemove } from '../api/tauri';
 
 const STORAGE_KEY = 'levee_suite_roots';
 
@@ -36,13 +36,13 @@ export function SuiteProvider({ children }: { children: ReactNode }) {
 
   // Keep Rust DB-routing state in sync with React state
   useEffect(() => {
-    invoke('set_suite_roots', { roots: suiteRoots }).catch(() => {});
+    setSuiteRootsCommand(suiteRoots).catch(() => {});
   }, [suiteRoots]);
 
   const refreshPrecache = useCallback(async () => {
     if (suiteRoots.length === 0) return;
     try {
-      const paths = await invoke<string[]>('suite_precache_list');
+      const paths = await suitePrecacheList();
       setPrecachedPaths(new Set(paths));
     } catch {}
   }, [suiteRoots]);
@@ -87,7 +87,7 @@ export function SuiteProvider({ children }: { children: ReactNode }) {
     setPrecachedPaths(prev => new Set([...prev, ...paths]));
     setLoadingPaths(prev => new Set([...prev, ...paths]));
     try {
-      await invoke('suite_precache_add', { paths });
+      await suitePrecacheAdd(paths);
     } catch {
       setPrecachedPaths(prev => { const n = new Set(prev); paths.forEach(p => n.delete(p)); return n; });
     } finally {
@@ -99,7 +99,7 @@ export function SuiteProvider({ children }: { children: ReactNode }) {
     setPrecachedPaths(prev => { const n = new Set(prev); paths.forEach(p => n.delete(p)); return n; });
     setLoadingPaths(prev => new Set([...prev, ...paths]));
     try {
-      await invoke('suite_precache_remove', { paths });
+      await suitePrecacheRemove(paths);
     } catch {
       setPrecachedPaths(prev => new Set([...prev, ...paths]));
     } finally {

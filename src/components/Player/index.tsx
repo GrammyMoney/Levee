@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { useMpvPlayer } from '../../hooks/useMpvPlayer';
 import { useAutoHide } from '../../hooks/useAutoHide';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
-import { getFileName, getAssetType } from '../../types';
+import { getAssetType } from '../../domain/media';
+import { getFileName } from '../../domain/path';
 import { useSuite } from '../../contexts/SuiteContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useProxy } from '../../contexts/ProxyContext';
@@ -13,6 +13,7 @@ import Controls from './Controls';
 import ChevronNav from './ChevronNav';
 import MetadataPanel from '../MetadataPanel';
 import Library from '../Library';
+import { getProxy, pickFile } from '../../api/tauri';
 
 interface Props {
   filePath: string;
@@ -53,7 +54,7 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
     if (isSuitePath(filePath)) refreshPrecache();
     if (getAssetType(filePath) !== 'video') { setProxyPath(null); return; }
     let cancelled = false;
-    invoke<string | null>('get_proxy', { originalPath: filePath })
+    getProxy(filePath)
       .then(p => { if (!cancelled) setProxyPath(p ?? null); })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -106,7 +107,7 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
   const fileName = getFileName(filePath);
 
   const handleOpenFile = useCallback(async () => {
-    const path = await invoke<string | null>('pick_file').catch(() => null);
+    const path = await pickFile().catch(() => null);
     if (path) onOpenFile(path);
   }, [onOpenFile]);
 

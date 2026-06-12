@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { generateProxy, precacheProxiesFolder } from '../api/tauri';
 import { createPortal } from 'react-dom';
-import { invoke } from '@tauri-apps/api/core';
 
 type JobStatus = 'queued' | 'generating' | 'done' | 'error';
 
@@ -58,12 +58,12 @@ export function ProxyProvider({ children }: { children: React.ReactNode }) {
     );
 
     try {
-      const proxyPath = await invoke<string>('generate_proxy', { originalPath: entry.originalPath });
+      const proxyPath = await generateProxy(entry.originalPath);
 
       setJobs(prev =>
         prev.map(j => j.id === entry.id ? { ...j, status: 'done' } : j)
       );
-      invoke('precache_proxies_folder', { originalPath: entry.originalPath }).catch(() => {});
+      precacheProxiesFolder(entry.originalPath).catch(() => {});
       entry.resolve(proxyPath);
     } catch (err) {
       setJobs(prev =>

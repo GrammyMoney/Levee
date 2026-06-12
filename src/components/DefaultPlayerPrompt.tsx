@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { useSettings } from '../contexts/SettingsContext';
+import { setAsDefaultPlayer } from '../api/tauri';
 
 // One-time prompt offering to make Levee the default video player. Windows 10/11
 // require the user to confirm in Settings, so this opens the Default Apps page.
@@ -12,7 +12,7 @@ export default function DefaultPlayerPrompt() {
 
   const setDefault = async () => {
     setBusy(true);
-    try { await invoke('set_as_default_player'); } catch {}
+    try { await setAsDefaultPlayer(); } catch {}
     setDefaultPlayerPrompted(true);
   };
 

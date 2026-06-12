@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import type { ProbeData } from '../../types';
+import type { ProbeData } from '../../domain/media';
+import { getProbeData } from '../../api/tauri';
 
 interface Props {
   isOpen: boolean;
@@ -27,7 +27,7 @@ export default function MetadataPanel({ isOpen, filePath, onClose }: Props) {
     setProbe(null);
     setError(null);
     setLoading(true);
-    invoke<ProbeData>('get_probe_data', { path: filePath })
+    getProbeData(filePath)
       .then(data => { setProbe(data); setLoading(false); })
       .catch(err => { setError(String(err)); setLoading(false); });
   }, [isOpen, filePath]);

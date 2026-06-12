@@ -1,6 +1,6 @@
-import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useSuite } from '../../contexts/SuiteContext';
+import { openFolder } from '../../api/tauri';
 
 interface Props {
   fileName: string;
@@ -27,7 +27,7 @@ export default function TopBar({
   const folderCached   = cachedEntry !== null && norm(cachedEntry) !== norm(filePath);
 
   const openInExplorer = () => {
-    invoke('open_folder', { path: filePath }).catch(() => {});
+    openFolder(filePath).catch(() => {});
   };
 
   const win = getCurrentWindow();

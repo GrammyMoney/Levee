@@ -1,17 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { deleteProxy, getProxiesBatch, getThumbnail, listDirectory, listDrives, openUrl, setAsDefaultPlayer, type DirListing } from '../../api/tauri';
 import { useSuite } from '../../contexts/SuiteContext';
 import { useProxy } from '../../contexts/ProxyContext';
-import { getAssetType } from '../../types';
+import { getAssetType } from '../../domain/media';
 import ContextMenu, { type ContextMenuItem } from './ContextMenu';
-
-interface DirListing {
-  path: string;
-  parentPath: string | null;
-  subdirs: string[];
-  mediaFiles: string[];
-}
 
 interface ContextMenuState {
   x: number;
@@ -88,7 +81,7 @@ export default function Library({
     thumbWorkers.current++;
     const file = thumbQueue.current.shift()!;
     try {
-      const p = await invoke<string>('get_thumbnail', { originalPath: file });
+      const p = await getThumbnail(file);
       setThumbnails(prev => ({ ...prev, [file]: convertFileSrc(p) }));
     } catch {
       setThumbnails(prev => ({ ...prev, [file]: null }));
@@ -103,10 +96,10 @@ export default function Library({
     setThumbnails({});
     thumbQueue.current = [];
     try {
-      const dir = await invoke<DirListing>('list_directory', { path });
+      const dir = await listDirectory(path);
       setListing(dir);
       if (dir.mediaFiles.length > 0) {
-        const batch = await invoke<Record<string, string>>('get_proxies_batch', { filePaths: dir.mediaFiles });
+        const batch = await getProxiesBatch(dir.mediaFiles);
         setProxies(batch);
       } else {
         setProxies({});
@@ -134,7 +127,7 @@ export default function Library({
     if (!isOpen || !listing) return;
     const id = setInterval(async () => {
       if (listing.mediaFiles.length > 0) {
-        const batch = await invoke<Record<string, string>>('get_proxies_batch', { filePaths: listing.mediaFiles }).catch(() => ({}));
+        const batch = await getProxiesBatch(listing.mediaFiles).catch(() => ({}));
         setProxies(batch);
       }
     }, 3000);
@@ -164,7 +157,7 @@ export default function Library({
   // Fetch drives when settings panel first opens
   useEffect(() => {
     if (!showSettings || allDrives.length > 0) return;
-    invoke<string[]>('list_drives').then(setAllDrives).catch(() => {});
+    listDrives().then(setAllDrives).catch(() => {});
   }, [showSettings, allDrives.length]);
 
   const toggleSuiteRoot = useCallback((drive: string) => {
@@ -241,7 +234,7 @@ export default function Library({
           label: 'Delete Proxy',
           variant: 'danger',
           onClick: async () => {
-            await invoke('delete_proxy', { originalPath: filePath }).catch(() => {});
+            await deleteProxy(filePath).catch(() => {});
             setProxies(prev => { const n = { ...prev }; delete n[filePath]; return n; });
           },
         });
@@ -636,7 +629,7 @@ function DriveSettingsPanel({
 
       <div className="shrink-0 border-t border-white/8 px-4 py-3">
         <button
-          onClick={() => invoke('set_as_default_player').catch(() => {})}
+          onClick={() => setAsDefaultPlayer().catch(() => {})}
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-white/8 hover:bg-white/14 text-sm text-white/70 hover:text-white transition-colors"
         >
           Set Levee as default video player
@@ -646,7 +639,7 @@ function DriveSettingsPanel({
 
       <div className="shrink-0 border-t border-white/8 px-4 py-2.5 flex items-center justify-center">
         <button
-          onClick={() => invoke('open_url', { url: 'https://github.com/GrammyMoney/levee' }).catch(() => {})}
+          onClick={() => openUrl('https://github.com/GrammyMoney/levee').catch(() => {})}
           className="text-[11px] text-white/30 hover:text-white/60 transition-colors"
           title="View Levee on GitHub"
         >

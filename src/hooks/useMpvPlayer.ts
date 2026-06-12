@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { mpvFrameStep, mpvLoad, mpvSeek, mpvSeekBy, mpvSetLoop, mpvSetMute, mpvSetPause, mpvSetSpeed, mpvSetVolume } from '../api/tauri';
 import type { VideoPlayerState, VideoPlayerControls } from './useVideoPlayer';
 
 export { PLAYBACK_RATES } from './useVideoPlayer';
@@ -39,7 +39,7 @@ export function useMpvPlayer() {
       if (pendingSeekRef.current != null && s.duration > 0) {
         const t = pendingSeekRef.current;
         pendingSeekRef.current = null;
-        invoke('mpv_seek', { time: t }).catch(() => {});
+        mpvSeek(t).catch(() => {});
       }
       setState(prev => ({
         ...prev,
@@ -56,47 +56,47 @@ export function useMpvPlayer() {
   const openFile = useCallback((path: string, seekTo?: number) => {
     pendingSeekRef.current = seekTo && seekTo > 0 ? seekTo : null;
     setState(prev => ({ ...prev, currentTime: 0, duration: 0 }));
-    invoke('mpv_load', { path }).catch(err => console.error('[mpv] load failed:', err));
+    mpvLoad(path).catch(err => console.error('[mpv] load failed:', err));
   }, []);
 
-  const play = useCallback(() => { invoke('mpv_set_pause', { paused: false }).catch(() => {}); }, []);
-  const pause = useCallback(() => { invoke('mpv_set_pause', { paused: true }).catch(() => {}); }, []);
+  const play = useCallback(() => { mpvSetPause(false).catch(() => {}); }, []);
+  const pause = useCallback(() => { mpvSetPause(true).catch(() => {}); }, []);
 
   const toggle = useCallback(() => {
     setState(prev => {
-      invoke('mpv_set_pause', { paused: prev.isPlaying }).catch(() => {});
+      mpvSetPause(prev.isPlaying).catch(() => {});
       return prev;
     });
   }, []);
 
   const seek = useCallback((time: number) => {
-    invoke('mpv_seek', { time }).catch(() => {});
+    mpvSeek(time).catch(() => {});
   }, []);
 
   const seekBy = useCallback((delta: number) => {
-    invoke('mpv_seek_by', { delta }).catch(() => {});
+    mpvSeekBy(delta).catch(() => {});
   }, []);
 
   const stepFrame = useCallback((direction: 1 | -1) => {
-    invoke('mpv_frame_step', { direction }).catch(() => {});
+    mpvFrameStep(direction).catch(() => {});
   }, []);
 
   const setVolume = useCallback((vol: number) => {
     const clamped = Math.max(0, Math.min(1, vol));
     muteRef.current = false;
-    invoke('mpv_set_volume', { volume: clamped * 100 }).catch(() => {});
-    invoke('mpv_set_mute', { muted: false }).catch(() => {});
+    mpvSetVolume(clamped * 100).catch(() => {});
+    mpvSetMute(false).catch(() => {});
     setState(prev => ({ ...prev, volume: clamped, isMuted: false }));
   }, []);
 
   const toggleMute = useCallback(() => {
     muteRef.current = !muteRef.current;
-    invoke('mpv_set_mute', { muted: muteRef.current }).catch(() => {});
+    mpvSetMute(muteRef.current).catch(() => {});
     setState(prev => ({ ...prev, isMuted: muteRef.current }));
   }, []);
 
   const setPlaybackRate = useCallback((rate: number) => {
-    invoke('mpv_set_speed', { speed: rate }).catch(() => {});
+    mpvSetSpeed(rate).catch(() => {});
     setState(prev => ({ ...prev, playbackRate: rate }));
   }, []);
 
@@ -113,7 +113,7 @@ export function useMpvPlayer() {
 
   const toggleLoop = useCallback(() => {
     loopRef.current = !loopRef.current;
-    invoke('mpv_set_loop', { looping: loopRef.current }).catch(() => {});
+    mpvSetLoop(loopRef.current).catch(() => {});
     setState(prev => ({ ...prev, isLooping: loopRef.current }));
   }, []);
 

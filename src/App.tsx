@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import Player from './components/Player';
 import Splash from './components/Splash';
@@ -7,6 +6,7 @@ import DefaultPlayerPrompt from './components/DefaultPlayerPrompt';
 import { SuiteProvider } from './contexts/SuiteContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { ProxyProvider } from './contexts/ProxyContext';
+import { getSiblingFiles, pickFile, takeLaunchFile } from './api/tauri';
 
 export default function App() {
   const [filePath, setFilePath] = useState<string | null>(null);
@@ -16,7 +16,7 @@ export default function App() {
 
   const openFile = useCallback(async (path: string) => {
     setFilePath(path);
-    const siblings = await invoke<string[]>('get_sibling_files', { path }).catch(() => []);
+    const siblings = await getSiblingFiles(path).catch(() => []);
     setSiblingFiles(siblings);
   }, []);
 
@@ -33,7 +33,7 @@ export default function App() {
     // Cold start: pull any file the app was launched with (file association / CLI).
     // Race-free — works regardless of how long the webview took to mount.
     // Keep the splash up (don't reveal DropZone) until we know there's no file.
-    invoke<string | null>('take_launch_file')
+    takeLaunchFile()
       .then(p => { if (p) openFile(p); else setCheckedLaunch(true); })
       .catch(() => setCheckedLaunch(true));
     // Running instance: a second launch forwards the file via this event.
@@ -67,7 +67,7 @@ export default function App() {
     }
     return providers(
       <DropZone onPickFile={async () => {
-        const path = await invoke<string | null>('pick_file').catch(() => null);
+        const path = await pickFile().catch(() => null);
         if (path) openFile(path);
       }} />
     );
