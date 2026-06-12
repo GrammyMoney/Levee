@@ -8,6 +8,7 @@ import { SettingsProvider } from './contexts/SettingsContext';
 import { ProxyProvider } from './contexts/ProxyContext';
 import { getSiblingFiles, pickFile, takeLaunchFile } from './api/tauri';
 import { showMainWindowWhenReady } from './api/window';
+import { CloseIcon, MinimizeIcon } from './components/icons';
 
 export default function App() {
   const [filePath, setFilePath] = useState<string | null>(null);
@@ -108,14 +109,14 @@ function DropZone({ onPickFile }: { onPickFile: () => void }) {
             className="flex items-center justify-center w-6 h-6 rounded text-white/30 hover:text-white hover:bg-white/15 transition-colors"
             title="Minimize"
           >
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><rect x="1" y="5.5" width="10" height="1.5" rx="0.75" /></svg>
+            <MinimizeIcon />
           </button>
           <button
             onClick={() => win.close()}
             className="flex items-center justify-center w-6 h-6 rounded text-white/30 hover:text-white hover:bg-red-500/70 transition-colors"
             title="Close"
           >
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 2l8 8M10 2L2 10" /></svg>
+            <CloseIcon size={10} />
           </button>
         </div>
       </div>

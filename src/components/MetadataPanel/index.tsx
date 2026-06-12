@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CloseIcon, SpinnerIcon } from '../icons';
 import type { ProbeData } from '../../domain/media';
 import { getProbeData } from '../../api/tauri';
 
@@ -69,10 +70,7 @@ export default function MetadataPanel({ isOpen, filePath, onClose }: Props) {
       <div className="flex-1 overflow-y-auto py-2">
         {loading && (
           <div className="flex items-center gap-2 px-4 py-6 text-white/40">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-              strokeLinecap="round" className="animate-spin shrink-0">
-              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-            </svg>
+            <SpinnerIcon className="animate-spin shrink-0" />
             <span className="text-xs">Reading file…</span>
           </div>
         )}
@@ -100,10 +98,3 @@ export default function MetadataPanel({ isOpen, filePath, onClose }: Props) {
   );
 }
 
-function CloseIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <path d="M2 2l12 12M14 2L2 14" />
-    </svg>
-  );
-}

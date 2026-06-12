@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
 import { generateProxy, precacheProxiesFolder } from '../api/tauri';
 import { createPortal } from 'react-dom';
+import { CheckIcon, ClockIcon, ErrorIcon, SpinnerIcon } from '../components/icons';
 
 type JobStatus = 'queued' | 'generating' | 'done' | 'error';
 
@@ -156,36 +157,8 @@ function ProxyToastPanel({ jobs }: { jobs: ProxyJob[] }) {
 }
 
 function StatusIcon({ status }: { status: JobStatus }) {
-  if (status === 'queued') {
-    return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-        strokeWidth="2" strokeLinecap="round" className="shrink-0 text-white/25">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 6v6l4 2" />
-      </svg>
-    );
-  }
-  if (status === 'generating') {
-    return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-        strokeWidth="2" strokeLinecap="round" className="animate-spin shrink-0 text-violet-400">
-        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-      </svg>
-    );
-  }
-  if (status === 'done') {
-    return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-emerald-400">
-        <path d="M20 6L9 17l-5-5" />
-      </svg>
-    );
-  }
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-red-400">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M15 9l-6 6M9 9l6 6" />
-    </svg>
-  );
+  if (status === 'queued') return <ClockIcon />;
+  if (status === 'generating') return <SpinnerIcon className="animate-spin shrink-0 text-violet-400" />;
+  if (status === 'done') return <CheckIcon />;
+  return <ErrorIcon />;
 }

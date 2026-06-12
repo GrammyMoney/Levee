@@ -1,4 +1,5 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { CloudCheckIcon, CloudIcon, CloseIcon, ExternalLinkIcon, FolderIcon, MaximizeIcon, MinimizeIcon, OpenFileIcon, SpinnerIcon } from '../icons';
 import { useSuite } from '../../contexts/SuiteContext';
 import { openFolder } from '../../api/tauri';
 
@@ -48,7 +49,7 @@ export default function TopBar({
         onClick={onOpenLibrary}
         title="Browse folder"
       >
-        <FolderIcon />
+        <FolderIcon size={16} className={undefined} />
       </button>
       <span
         className={`text-sm font-medium text-white truncate transition-opacity duration-300 ${
@@ -152,77 +153,11 @@ export default function TopBar({
   );
 }
 
-function FolderIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M1.5 3a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5h13a.5.5 0 0 0 .5-.5V5.5a.5.5 0 0 0-.5-.5H7.707L6.354 3.646A.5.5 0 0 0 6 3.5H1.5z" />
-    </svg>
-  );
-}
 
-function OpenFileIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="3" width="12" height="10" rx="1" />
-      <path d="M5 3V2M8 3V2M11 3V2" />
-    </svg>
-  );
-}
 
-function ExternalLinkIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9" />
-      <path d="M10 2h4v4M14 2L8 8" />
-    </svg>
-  );
-}
 
-function CloudIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
-    </svg>
-  );
-}
 
-function CloudCheckIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
-      <path d="M9 14l2 2 4-4" />
-    </svg>
-  );
-}
 
-function SpinnerIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="animate-spin">
-      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-    </svg>
-  );
-}
 
-function MinimizeIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor">
-      <rect x="1" y="5.5" width="10" height="1.5" rx="0.75" />
-    </svg>
-  );
-}
 
-function MaximizeIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4">
-      <rect x="1.5" y="1.5" width="9" height="9" rx="1" />
-    </svg>
-  );
-}
 
-function CloseIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-      <path d="M2 2l8 8M10 2L2 10" />
-    </svg>
-  );
-}
