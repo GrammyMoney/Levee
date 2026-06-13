@@ -1,3 +1,4 @@
+mod cache;
 mod dcomp;
 mod mpv;
 
@@ -35,34 +36,39 @@ CREATE TABLE IF NOT EXISTS thumbnails (
 
 struct DbPool {
     local: Connection,
-    /// Keyed by normalized drive root e.g. "S:\\"
-    suite: HashMap<String, Connection>,
-    /// User-configured Suite mount roots
-    suite_roots: Vec<String>,
+    /// Shared levee.db connections per managed drive, keyed by drive root e.g. "S:\\"
+    managed: HashMap<String, Connection>,
+    /// Drive root (normalized) → provider (Local / Suite / LucidLink)
+    drive_providers: HashMap<String, cache::Provider>,
 }
 
 impl DbPool {
-    /// Returns a mutable reference to the DB appropriate for the given file path.
-    /// If the file is on a known Suite root, opens (or reuses) that root's levee.db.
-    /// Falls back to the local DB otherwise.
+    /// The configured provider for the drive containing `path`.
+    fn provider_for(&self, path: &Path) -> cache::Provider {
+        drive_root_of(path)
+            .and_then(|root| self.drive_providers.get(&norm_path(&root)).copied())
+            .unwrap_or(cache::Provider::Local)
+    }
+
+    /// Returns the DB appropriate for `path`. Any non-local (managed) drive gets a
+    /// shared `{drive}\Levee\levee.db`; everything else uses the app-local DB.
     fn db_for(&mut self, path: &Path) -> &mut Connection {
-        let root = drive_root_of(path);
-        if let Some(ref root) = root {
-            let norm = norm_path(root);
-            let is_suite = self.suite_roots.iter().any(|r| norm_path(r) == norm);
-            if is_suite {
-                if !self.suite.contains_key(root) {
-                    let db_path = Path::new(root).join("Levee").join("levee.db");
+        if let Some(root) = drive_root_of(path) {
+            let norm = norm_path(&root);
+            let managed = self.drive_providers.get(&norm).map(|p| p.is_managed()).unwrap_or(false);
+            if managed {
+                if !self.managed.contains_key(&root) {
+                    let db_path = Path::new(&root).join("Levee").join("levee.db");
                     if let Some(dir) = db_path.parent() {
                         let _ = std::fs::create_dir_all(dir);
                     }
                     if let Ok(conn) = Connection::open(&db_path) {
                         let _ = conn.execute_batch(SCHEMA);
-                        self.suite.insert(root.clone(), conn);
+                        self.managed.insert(root.clone(), conn);
                     }
                 }
-                if self.suite.contains_key(root) {
-                    return self.suite.get_mut(root).unwrap();
+                if self.managed.contains_key(&root) {
+                    return self.managed.get_mut(&root).unwrap();
                 }
             }
         }
@@ -558,15 +564,21 @@ async fn generate_proxy(
     let out = tauri::async_runtime::spawn_blocking(move || {
         quiet_command(&ffmpeg)
             .args([
+                "-hide_banner", "-loglevel", "error",
                 "-i",        &orig,
-                "-vf",       "scale=trunc(iw/4)*2:trunc(ih/4)*2",
+                "-map",      "0:v:0",
+                "-map",      "0:a:0?",
+                // Normalize color metadata before the pixel-format conversion —
+                // camera ProRes (incl. 4444 / 12-bit 4:4:4) carries reserved/gbr
+                // color tags that swscale otherwise refuses to convert to yuv420p.
+                "-vf",       "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,scale=trunc(iw/4)*2:trunc(ih/4)*2,format=yuv420p",
                 "-c:v",      "libx264",
                 "-crf",      "23",
                 "-preset",   "fast",
-                "-pix_fmt",  "yuv420p",
                 "-movflags", "+faststart",
                 "-c:a",      "aac",
                 "-b:a",      "128k",
+                "-ac",       "2",
                 "-y",        &proxy,
             ])
             .output()
@@ -576,7 +588,9 @@ async fn generate_proxy(
     .map_err(|e| format!("Failed to launch ffmpeg: {e}"))?;
 
     if !out.status.success() {
-        return Err(format!("ffmpeg error: {}", String::from_utf8_lossy(&out.stderr)));
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        eprintln!("[proxy] ffmpeg failed for {original_path}:\n{stderr}");
+        return Err(format!("ffmpeg error: {}", stderr.lines().last().unwrap_or("unknown")));
     }
 
     // Write to DB for auditing / shared discovery on Suite drives
@@ -664,66 +678,68 @@ fn list_directory(path: String) -> Result<DirListing, String> {
     Ok(DirListing { path, parent_path, subdirs, media_files })
 }
 
-// ── Suite commands ────────────────────────────────────────────────────────────
+// ── Cache / pin commands (provider-routed) ──────────────────────────────────
 
-fn run_suite_cmd(args: &[&str]) -> std::io::Result<std::process::Output> {
-    quiet_command("suite").args(args).output()
+/// Provider for the drive containing `path`, looked up in a snapshot of the map.
+fn provider_for_map(map: &HashMap<String, cache::Provider>, path: &Path) -> cache::Provider {
+    drive_root_of(path)
+        .and_then(|root| map.get(&norm_path(&root)).copied())
+        .unwrap_or(cache::Provider::Local)
 }
 
-/// Updates the in-memory list of Suite roots used for DB routing.
+/// Sets each drive's provider (Local / Suite / LucidLink). Drives the DB routing
+/// and which CLI pin/cache commands get used.
 #[tauri::command]
-fn set_suite_roots(state: tauri::State<AppState>, roots: Vec<String>) {
+fn set_drive_providers(state: tauri::State<AppState>, providers: HashMap<String, String>) {
     let mut pool = state.0.lock().unwrap();
-    pool.suite_roots = roots;
-}
-
-#[tauri::command]
-fn suite_precache_add(paths: Vec<String>) -> Result<String, String> {
-    let mut lines = vec![];
-    for path in &paths {
-        let out = run_suite_cmd(&["pre-cache", "add", "--path", path])
-            .map_err(|e| e.to_string())?;
-        if !out.status.success() {
-            return Err(format!("suite pre-cache add failed: {}",
-                String::from_utf8_lossy(&out.stderr)));
-        }
-        lines.push(String::from_utf8_lossy(&out.stdout).into_owned());
-    }
-    Ok(lines.join("\n"))
-}
-
-#[tauri::command]
-fn suite_precache_remove(paths: Vec<String>) -> Result<String, String> {
-    let mut lines = vec![];
-    for path in &paths {
-        let out = run_suite_cmd(&["pre-cache", "remove", "--path", path])
-            .map_err(|e| e.to_string())?;
-        if !out.status.success() {
-            return Err(format!("suite pre-cache remove failed: {}",
-                String::from_utf8_lossy(&out.stderr)));
-        }
-        lines.push(String::from_utf8_lossy(&out.stdout).into_owned());
-    }
-    Ok(lines.join("\n"))
-}
-
-#[tauri::command]
-fn suite_precache_list() -> Result<Vec<String>, String> {
-    let out = run_suite_cmd(&["pre-cache", "list"]).map_err(|e| e.to_string())?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    let json: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("Failed to parse suite output: {e}\nRaw: {text}"))?;
-    let entries = json["PreCacheEntries"]
-        .as_array()
-        .ok_or_else(|| format!("Unexpected JSON structure: {text}"))?;
-    let paths = entries
-        .iter()
-        .filter_map(|entry| {
-            let p = entry["Path"].as_str()?;
-            Some(p.trim_start_matches('/').replace('/', "\\"))
-        })
+    pool.drive_providers = providers
+        .into_iter()
+        .map(|(drive, kind)| (norm_path(&drive), cache::Provider::parse(&kind)))
         .collect();
-    Ok(paths)
+}
+
+/// Pin / pre-cache each path through its drive's provider.
+#[tauri::command]
+fn precache_add(state: tauri::State<AppState>, paths: Vec<String>) -> Result<(), String> {
+    let providers = { state.0.lock().unwrap().drive_providers.clone() };
+    for p in &paths {
+        let path = Path::new(p);
+        cache::pin(provider_for_map(&providers, path), path)?;
+    }
+    Ok(())
+}
+
+/// Unpin / remove-from-cache each path through its drive's provider.
+#[tauri::command]
+fn precache_remove(state: tauri::State<AppState>, paths: Vec<String>) -> Result<(), String> {
+    let providers = { state.0.lock().unwrap().drive_providers.clone() };
+    for p in &paths {
+        let path = Path::new(p);
+        cache::unpin(provider_for_map(&providers, path), path)?;
+    }
+    Ok(())
+}
+
+/// All currently pinned/pre-cached paths across every managed drive (absolute).
+#[tauri::command]
+fn precache_list(state: tauri::State<AppState>) -> Result<Vec<String>, String> {
+    let providers = { state.0.lock().unwrap().drive_providers.clone() };
+    let mut result = Vec::new();
+    // Suite pre-cache list is global (absolute paths).
+    if providers.values().any(|p| *p == cache::Provider::Suite) {
+        if let Ok(paths) = cache::suite_list() {
+            result.extend(paths);
+        }
+    }
+    // LucidLink pins are per-filespace (relative); absolutize under each drive.
+    for (root, p) in &providers {
+        if *p == cache::Provider::LucidLink {
+            if let Ok(paths) = cache::lucid_list(root) {
+                result.extend(paths);
+            }
+        }
+    }
+    Ok(result)
 }
 
 /// Extracts a single thumbnail frame from a video file using ffmpeg.
@@ -814,17 +830,14 @@ fn list_drives() -> Vec<String> {
     }
 }
 
-/// Tells Suite to pre-cache the `Levee\Proxies` folder on the same drive as the file.
+/// Pins the `Levee\Proxies` folder on the asset's drive via that drive's provider
+/// (Suite pre-cache or LucidLink pin), so the whole team's proxies stay cached.
 #[tauri::command]
-fn precache_proxies_folder(original_path: String) -> Result<(), String> {
+fn precache_proxies_folder(state: tauri::State<AppState>, original_path: String) -> Result<(), String> {
     let root = proxies_root_for(Path::new(&original_path))?;
     if !root.exists() { return Ok(()); }
-    let path_str = root.to_string_lossy().into_owned();
-    let out = run_suite_cmd(&["pre-cache", "add", "--path", &path_str])
-        .map_err(|e| e.to_string())?;
-    if out.status.success() { Ok(()) } else {
-        Err(String::from_utf8_lossy(&out.stderr).into_owned())
-    }
+    let provider = { state.0.lock().unwrap().provider_for(&root) };
+    cache::pin(provider, &root)
 }
 
 
@@ -1028,8 +1041,8 @@ pub fn run() {
 
             app.manage(AppState(Mutex::new(DbPool {
                 local,
-                suite: HashMap::new(),
-                suite_roots: vec![],
+                managed: HashMap::new(),
+                drive_providers: HashMap::new(),
             })));
 
             // ── Native mpv video pipeline ─────────────────────────────────────
@@ -1093,10 +1106,10 @@ pub fn run() {
             get_proxy,
             generate_proxy,
             get_proxies_root,
-            set_suite_roots,
-            suite_precache_add,
-            suite_precache_remove,
-            suite_precache_list,
+            set_drive_providers,
+            precache_add,
+            precache_remove,
+            precache_list,
             precache_proxies_folder,
             list_directory,
             get_proxies_batch,

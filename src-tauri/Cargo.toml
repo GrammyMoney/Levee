@@ -1,6 +1,6 @@
 [package]
 name = "levee"
-version = "0.1.0"
+version = "0.2.0"
 description = "Levee — proxy player and Suite pre-cache manager"
 authors = []
 edition = "2021"

@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useSuite } from '../../contexts/SuiteContext';
+import { accentFor, pinVerb } from '../../accent';
 
 interface Props {
   fileName: string;
@@ -17,14 +18,18 @@ interface Props {
 export default function TopBar({
   fileName, filePath, visible, libraryOpen, hasProxy, isPlayingProxy, onToggleProxy, onOpenFile, onOpenLibrary,
 }: Props) {
-  const { isSuitePath, isPrecached, precachedEntryFor, isLoading, togglePrecache } = useSuite();
-  const isSuiteFile    = isSuitePath(filePath);
+  const { providerFor, isPrecached, precachedEntryFor, isLoading, togglePrecache } = useSuite();
+  const provider       = providerFor(filePath);
+  const isManagedFile  = provider !== 'local';
   const precached      = isPrecached(filePath);
   const loading        = isLoading(filePath);
   const norm           = (p: string) => p.toLowerCase().replace(/\\/g, '/');
   const cachedEntry    = precachedEntryFor(filePath);
   // True when cached via a parent folder entry — show active state but disable interaction
   const folderCached   = cachedEntry !== null && norm(cachedEntry) !== norm(filePath);
+  // LucidLink "pins" (lime accent), Suite "pre-caches" (sky accent).
+  const a              = accentFor(provider);
+  const { verb, done: cachedLabel } = pinVerb(provider);
 
   const openInExplorer = () => {
     invoke('open_folder', { path: filePath }).catch(() => {});
@@ -84,35 +89,35 @@ export default function TopBar({
         </button>
       )}
 
-      {/* Suite pre-cache badge — always visible; interactive for Suite files only */}
+      {/* Cache/pin badge — always visible; interactive for managed drives only */}
       <button
-        onClick={() => { if (isSuiteFile && !loading && !folderCached) togglePrecache(filePath); }}
-        disabled={!isSuiteFile || loading || folderCached}
+        onClick={() => { if (isManagedFile && !loading && !folderCached) togglePrecache(filePath); }}
+        disabled={!isManagedFile || loading || folderCached}
         title={
-          !isSuiteFile
-            ? 'Not a Suite asset'
+          !isManagedFile
+            ? 'Not on a cloud-streamed drive'
             : loading
               ? 'Working…'
               : folderCached
                 ? 'Cached via parent folder'
                 : precached
-                  ? 'Cached locally — click to remove from pre-cache'
-                  : 'Click to pre-cache this asset'
+                  ? `${cachedLabel} locally — click to remove`
+                  : `Click to ${verb.toLowerCase()} this asset`
         }
         className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-all shrink-0 ${
-          !isSuiteFile
+          !isManagedFile
             ? 'bg-white/6 text-white/20 cursor-default'
             : loading
               ? 'bg-white/10 text-white/40 cursor-wait'
               : folderCached
-                ? 'bg-sky-500/25 text-sky-300 cursor-default'
+                ? `${a.bg} ${a.text} cursor-default`
                 : precached
-                  ? 'bg-sky-500/25 text-sky-300 hover:bg-sky-500/35'
+                  ? `${a.bg} ${a.text} ${a.hover}`
                   : 'bg-white/10 text-white/50 hover:bg-white/18 hover:text-white/80'
         }`}
       >
         {loading ? <SpinnerIcon /> : precached ? <CloudCheckIcon /> : <CloudIcon />}
-        <span>{!isSuiteFile ? 'Local' : loading ? 'Working…' : precached ? 'Cached' : 'Pre-cache'}</span>
+        <span>{!isManagedFile ? 'Local' : loading ? 'Working…' : precached ? cachedLabel : verb}</span>
       </button>
 
       {/* Open file */}

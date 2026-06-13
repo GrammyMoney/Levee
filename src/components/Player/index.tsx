@@ -24,7 +24,7 @@ interface Props {
 export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }: Props) {
   const { state, controls, openFile } = useMpvPlayer();
   const { isVisible, show, hide } = useAutoHide(2000);
-  const { isSuitePath, refreshPrecache } = useSuite();
+  const { isManaged, refreshPrecache } = useSuite();
   const {
     preferProxies, setPreferProxies,
     defaultPlayerPrompted, suiteOnboarded, setSuiteOnboarded,
@@ -50,7 +50,7 @@ export default function Player({ filePath, onOpenFile, onPrevFile, onNextFile }:
 
   // Check for an existing proxy when the original file changes
   useEffect(() => {
-    if (isSuitePath(filePath)) refreshPrecache();
+    if (isManaged(filePath)) refreshPrecache();
     if (getAssetType(filePath) !== 'video') { setProxyPath(null); return; }
     let cancelled = false;
     invoke<string | null>('get_proxy', { originalPath: filePath })

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { useSuite } from '../../contexts/SuiteContext';
+import { useSuite, type Provider } from '../../contexts/SuiteContext';
 import { useProxy } from '../../contexts/ProxyContext';
 import { getAssetType } from '../../types';
+import { accentFor, pinVerb } from '../../accent';
+import Dropdown from '../Dropdown';
 import ContextMenu, { type ContextMenuItem } from './ContextMenu';
 
 interface DirListing {
@@ -58,8 +60,8 @@ export default function Library({
   isOpen, initialPath, currentFilePath, onboarding, onOnboardingDone, onOpenFile, onClose,
 }: Props) {
   const {
-    suiteRoots, updateSuiteRoots,
-    isSuitePath, isPrecached, precachedEntryFor, isLoading: isSuiteLoading,
+    driveProviders, setDriveProvider, providerFor,
+    isManaged, isPrecached, precachedEntryFor, isLoading: isSuiteLoading,
     addToPrecache, removeFromPrecache, togglePrecache,
   } = useSuite();
   const normPath = (p: string) => p.toLowerCase().replace(/\\/g, '/');
@@ -161,21 +163,11 @@ export default function Library({
     removeFromPrecache([listing.path]);
   }, [listing, removeFromPrecache]);
 
-  // Fetch drives when settings panel first opens
+  // Fetch drives when the library opens (needed for the drive switcher + settings)
   useEffect(() => {
-    if (!showSettings || allDrives.length > 0) return;
+    if (!isOpen || allDrives.length > 0) return;
     invoke<string[]>('list_drives').then(setAllDrives).catch(() => {});
-  }, [showSettings, allDrives.length]);
-
-  const toggleSuiteRoot = useCallback((drive: string) => {
-    const norm = (p: string) => p.toLowerCase().replace(/\\/g, '/');
-    const dNorm = norm(drive.endsWith('\\') || drive.endsWith('/') ? drive : drive + '\\');
-    const isActive = suiteRoots.some(r => norm(r.endsWith('\\') || r.endsWith('/') ? r : r + '\\') === dNorm);
-    const next = isActive
-      ? suiteRoots.filter(r => norm(r.endsWith('\\') || r.endsWith('/') ? r : r + '\\') !== dNorm)
-      : [...suiteRoots, drive.endsWith('\\') || drive.endsWith('/') ? drive : drive + '\\'];
-    updateSuiteRoots(next);
-  }, [suiteRoots, updateSuiteRoots]);
+  }, [isOpen, allDrives.length]);
 
   const openFileContextMenu = useCallback((e: React.MouseEvent, filePath: string) => {
     e.preventDefault();
@@ -193,9 +185,11 @@ export default function Library({
     const items: ContextMenuItem[] = [];
 
     if (menu.type === 'folder') {
-      const isSuite = isSuitePath(menu.target);
+      const isSuite = isManaged(menu.target);
       const cached = isPrecached(menu.target);
       const loading = isSuiteLoading(menu.target);
+      const lucid = providerFor(menu.target) === 'lucidlink';
+      const v = pinVerb(providerFor(menu.target));
       items.push({
         label: 'Open Folder',
         onClick: () => loadDir(menu.target),
@@ -203,7 +197,9 @@ export default function Library({
       if (isSuite) {
         items.push({ label: '──────────', disabled: true, onClick: () => {} });
         items.push({
-          label: loading ? 'Working…' : cached ? 'Remove from Pre-cache' : 'Pre-cache Folder',
+          label: loading ? 'Working…'
+            : cached ? (lucid ? 'Unpin Folder' : 'Remove from Pre-cache')
+            : `${v.verb} Folder`,
           disabled: loading,
           variant: cached ? 'danger' : 'default',
           onClick: () => cached
@@ -218,9 +214,11 @@ export default function Library({
     const filePath = menu.target;
     const isVideo = getAssetType(filePath) === 'video';
     const hasProxy = !!proxies[filePath];
-    const isSuite = isSuitePath(filePath);
+    const isSuite = isManaged(filePath);
     const cached = isPrecached(filePath);
     const loading = isSuiteLoading(filePath);
+    const lucid = providerFor(filePath) === 'lucidlink';
+    const v = pinVerb(providerFor(filePath));
 
     items.push({
       label: 'Open',
@@ -251,7 +249,9 @@ export default function Library({
     items.push({ label: '──────────', disabled: true, onClick: () => {} });
     if (isSuite) {
       items.push({
-        label: loading ? 'Working…' : cached ? 'Remove from Pre-cache' : 'Pre-cache File',
+        label: loading ? 'Working…'
+          : cached ? (lucid ? 'Unpin File' : 'Remove from Pre-cache')
+          : `${v.verb} File`,
         disabled: loading,
         variant: cached ? 'danger' : 'default',
         onClick: () => togglePrecache(filePath),
@@ -260,26 +260,41 @@ export default function Library({
       const folderCached = isPrecached(parentDir);
       const folderLoading = isSuiteLoading(parentDir);
       items.push({
-        label: folderLoading ? 'Working…' : folderCached ? 'Remove Folder Pre-cache' : 'Pre-cache Parent Folder',
+        label: folderLoading ? 'Working…'
+          : folderCached ? (lucid ? 'Unpin Parent Folder' : 'Remove Folder Pre-cache')
+          : `${v.verb} Parent Folder`,
         disabled: folderLoading,
         onClick: () => folderCached
           ? removeFromPrecache([parentDir])
           : addToPrecache([parentDir]),
       });
     } else {
-      items.push({ label: 'Pre-cache File', disabled: true, onClick: () => {} });
+      items.push({ label: `${v.verb} File`, disabled: true, onClick: () => {} });
     }
 
     return items;
-  }, [proxies, isSuitePath, isPrecached, isSuiteLoading, queueProxy, addToPrecache, removeFromPrecache, togglePrecache, onOpenFile, loadDir]);
+  }, [proxies, isManaged, isPrecached, isSuiteLoading, queueProxy, addToPrecache, removeFromPrecache, togglePrecache, onOpenFile, loadDir]);
 
   const currentDir = listing?.path ?? '';
-  const isFolderSuite = isSuitePath(currentDir);
+  const isFolderSuite = isManaged(currentDir);
   const isFolderCached = isPrecached(currentDir);
   const isFolderLoading = isSuiteLoading(currentDir);
   const videoFilesWithoutProxy = listing?.mediaFiles.filter(
     f => getAssetType(f) === 'video' && !proxies[f]
   ) ?? [];
+
+  // Accent + wording follow the current directory's drive provider
+  // (lime for LucidLink, sky for Suite).
+  const folderProvider = providerFor(currentDir);
+  const a = accentFor(folderProvider);
+  const folderVerb = pinVerb(folderProvider);
+
+  // Drive switcher: the current drive letter + the path after it.
+  const curDriveLetter = currentDir.match(/^[a-zA-Z]:/)?.[0] ?? '';
+  const curDriveRoot = allDrives.find(d => d.toLowerCase().startsWith(curDriveLetter.toLowerCase()))
+    ?? (curDriveLetter ? curDriveLetter + '\\' : '');
+  const restPath = curDriveRoot ? currentDir.slice(curDriveRoot.length) : currentDir;
+  const driveOptions = allDrives.map(d => ({ value: d, label: d.replace(/[/\\]$/, '') }));
 
   return (
     <>
@@ -309,9 +324,28 @@ export default function Library({
             </button>
           )}
 
-          <span className="flex-1 text-xs text-white/50 truncate font-mono" title={showSettings ? 'Settings' : currentDir}>
-            {showSettings ? 'Suite Drive Settings' : (currentDir || '…')}
-          </span>
+          {showSettings ? (
+            <span className="flex-1 text-xs text-white/50 truncate font-mono">Drive Settings</span>
+          ) : (
+            <div className="flex-1 flex items-center gap-1.5 min-w-0">
+              {curDriveRoot && driveOptions.length > 0 && (
+                <Dropdown
+                  value={curDriveRoot}
+                  options={driveOptions}
+                  onChange={d => loadDir(d)}
+                  title="Switch drive"
+                  triggerClassName={`px-2 py-0.5 rounded-md text-xs font-mono font-semibold border ${
+                    folderProvider !== 'local'
+                      ? `${a.bg} ${a.text} ${a.border}`
+                      : 'bg-white/8 text-white/60 border-white/10 hover:text-white/80'
+                  }`}
+                />
+              )}
+              <span className="text-xs text-white/40 truncate font-mono" title={currentDir}>
+                {restPath || '…'}
+              </span>
+            </div>
+          )}
 
           <button
             onClick={() => setShowSettings(v => !v)}
@@ -352,10 +386,10 @@ export default function Library({
               <button
                 onClick={handleRemovePrecacheFolder}
                 disabled={isFolderLoading}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-sky-500/25 text-sky-300 hover:bg-sky-500/35 transition-colors disabled:opacity-50"
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${a.bg} ${a.text} ${a.hover}`}
               >
                 {isFolderLoading ? <SpinnerIcon /> : <CloudCheckIcon />}
-                Folder Cached
+                Folder {folderVerb.done}
               </button>
             ) : (
               <button
@@ -364,7 +398,7 @@ export default function Library({
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white/10 text-white/50 hover:bg-white/18 hover:text-white/80 transition-colors disabled:opacity-50"
               >
                 {isFolderLoading ? <SpinnerIcon /> : <CloudIcon />}
-                Pre-cache Folder
+                {folderVerb.verb} Folder
               </button>
             )
           )}
@@ -374,10 +408,10 @@ export default function Library({
         {showSettings && (
           <DriveSettingsPanel
             allDrives={allDrives}
-            suiteRoots={suiteRoots}
+            driveProviders={driveProviders}
             onboarding={!!onboarding}
             onOnboardingDone={onOnboardingDone}
-            onToggle={toggleSuiteRoot}
+            onSetProvider={setDriveProvider}
           />
         )}
 
@@ -386,7 +420,7 @@ export default function Library({
           {/* Left: subdirectories */}
           <div className="w-40 shrink-0 border-r border-white/8 overflow-y-auto py-1">
             {listing?.subdirs.map(dir => {
-              const dirSuite = isSuitePath(dir);
+              const dirSuite = isManaged(dir);
               const dirCached = isPrecached(dir);
               return (
                 <button
@@ -398,7 +432,7 @@ export default function Library({
                   <FolderIcon />
                   <span className="truncate flex-1">{getDirName(dir)}</span>
                   {dirSuite && dirCached && (
-                    <CloudCheckIconSm className="shrink-0 text-sky-400/70" />
+                    <CloudCheckIconSm className={`shrink-0 ${a.textStrong}`} />
                   )}
                 </button>
               );
@@ -419,7 +453,7 @@ export default function Library({
                 const isPlaying = file === currentFilePath;
                 const isSelected = selectedFiles.has(file);
                 const hasProxy = !!proxies[file];
-                const isSuite = isSuitePath(file);
+                const isSuite = isManaged(file);
                 const cached = isPrecached(file);
                 const cacheLoading = isSuiteLoading(file);
                 const isVideo = getAssetType(file) === 'video';
@@ -506,11 +540,11 @@ export default function Library({
                         <button
                           title={
                             !isSuite
-                              ? 'Not a Suite asset'
+                              ? 'Not on a cloud-streamed drive'
                               : cacheLoading ? 'Working…'
-                              : folderCached ? 'Cached via parent folder'
-                              : cached ? 'Cached — click to remove'
-                              : 'Not pre-cached — click to add'
+                              : folderCached ? `${folderVerb.done} via parent folder`
+                              : cached ? `${folderVerb.done} — click to remove`
+                              : `Click to ${folderVerb.verb.toLowerCase()}`
                           }
                           disabled={!isSuite || cacheLoading || folderCached}
                           onClick={e => {
@@ -522,9 +556,9 @@ export default function Library({
                             !isSuite
                               ? 'text-white/12 cursor-default'
                               : cacheLoading ? 'text-white/40 cursor-wait'
-                              : folderCached ? 'text-sky-400 cursor-default'
-                              : cached ? 'text-sky-400 hover:text-red-400'
-                              : 'text-white/25 hover:text-sky-400'
+                              : folderCached ? `${a.textStrong} cursor-default`
+                              : cached ? `${a.textStrong} hover:text-red-400`
+                              : `text-white/25 ${a.hoverText}`
                           }`}
                         >
                           {cacheLoading ? <SpinnerIconSm /> : cached ? <CloudCheckIconSm /> : <CloudIconSm />}
@@ -554,17 +588,19 @@ export default function Library({
 // ── Settings panel ────────────────────────────────────────────────────────────
 
 function DriveSettingsPanel({
-  allDrives, suiteRoots, onboarding, onOnboardingDone, onToggle,
+  allDrives, driveProviders, onboarding, onOnboardingDone, onSetProvider,
 }: {
   allDrives: string[];
-  suiteRoots: string[];
+  driveProviders: Record<string, Provider>;
   onboarding?: boolean;
   onOnboardingDone?: () => void;
-  onToggle: (drive: string) => void;
+  onSetProvider: (drive: string, provider: Provider) => void;
 }) {
-  const norm = (p: string) => p.toLowerCase().replace(/\\/g, '/').replace(/\/$/, '');
-  const isActive = (drive: string) =>
-    suiteRoots.some(r => norm(r) === norm(drive));
+  const driveKey = (drive: string) => {
+    let d = drive.toLowerCase().replace(/\//g, '\\');
+    return d.endsWith('\\') ? d : d + '\\';
+  };
+  const providerOf = (drive: string): Provider => driveProviders[driveKey(drive)] ?? 'local';
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -576,11 +612,12 @@ function DriveSettingsPanel({
             </svg>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-amber-100 text-xs font-semibold mb-0.5">Set your Suite drive</p>
+            <p className="text-amber-100 text-xs font-semibold mb-0.5">Set your cloud drive</p>
             <p className="text-amber-100/70 text-[11px] leading-relaxed">
-              Levee needs to know which drives hold your Suite footage. Toggle the
-              <span className="font-semibold text-amber-200"> Suite </span>
-              badge on for your Suite drive below — pre-cache controls only appear for those drives.
+              Levee needs to know which drives are cloud-streamed. Set the dropdown to
+              <span className="font-semibold text-amber-200"> Suite </span>or
+              <span className="font-semibold text-amber-200"> LucidLink </span>
+              for your footage drive below — proxy &amp; pre-cache controls only appear for those.
             </p>
           </div>
           <button
@@ -595,7 +632,7 @@ function DriveSettingsPanel({
 
       <div className="px-4 py-3 border-b border-white/8 shrink-0">
         <p className="text-xs text-white/40 leading-relaxed">
-          Select which drives are Suite drives. Pre-cache badges and controls only appear for files on Suite drives.
+          Set each drive's streaming provider. Proxy, thumbnail, and pre-cache features only apply to drives marked Suite or LucidLink.
         </p>
       </div>
 
@@ -604,32 +641,42 @@ function DriveSettingsPanel({
           <p className="text-xs text-white/25 px-1 py-2">Detecting drives…</p>
         ) : allDrives.map(drive => {
           const label = drive.replace(/[/\\]$/, '');
-          const active = isActive(drive);
+          const provider = providerOf(drive);
+          const managed = provider !== 'local';
+          const ra = accentFor(provider);
           return (
-            <button
+            <div
               key={drive}
-              onClick={() => onToggle(drive)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors text-left w-full group ${
-                active ? 'bg-sky-500/12 hover:bg-sky-500/18' : 'hover:bg-white/6'
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors w-full ${
+                managed ? ra.bgSoft : 'hover:bg-white/6'
               }`}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-                className={active ? 'text-sky-400' : 'text-white/25'}>
+                className={managed ? ra.textStrong : 'text-white/25'}>
                 <rect x="2" y="6" width="20" height="13" rx="2" />
                 <path d="M6 11h.01M10 11h.01" />
               </svg>
-              <span className={`text-sm font-medium flex-1 ${active ? 'text-white/90' : 'text-white/50'}`}>
+              <span className={`text-sm font-medium flex-1 ${managed ? 'text-white/90' : 'text-white/50'}`}>
                 {label}
               </span>
-              <span className={`flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors ${
-                active
-                  ? 'bg-sky-500/25 text-sky-300'
-                  : 'bg-white/8 text-white/25 group-hover:bg-white/12 group-hover:text-white/40'
-              } ${onboarding && !active ? 'ring-2 ring-amber-400/60 animate-pulse' : ''}`}>
-                {active ? <><span className="w-1 h-1 rounded-full bg-sky-400 shrink-0" />Suite</> : 'Not Suite'}
-              </span>
-            </button>
+              <Dropdown
+                value={provider}
+                align="right"
+                minWidth="9rem"
+                options={[
+                  { value: 'local', label: 'Local' },
+                  { value: 'suite', label: 'Suite' },
+                  { value: 'lucidlink', label: 'LucidLink' },
+                ]}
+                onChange={v => onSetProvider(drive, v as Provider)}
+                triggerClassName={`text-xs font-medium rounded-md px-2.5 py-1 border ${
+                  managed
+                    ? `${ra.bg} ${ra.text} ${ra.border}`
+                    : 'bg-white/8 text-white/50 border-white/10 hover:text-white/80'
+                } ${onboarding && !managed ? 'ring-2 ring-amber-400/60 animate-pulse' : ''}`}
+              />
+            </div>
           );
         })}
       </div>
