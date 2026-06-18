@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { generateProxy, precacheProxiesFolder } from '../api/tauri';
 import { createPortal } from 'react-dom';
-import { invoke } from '@tauri-apps/api/core';
+import { CheckIcon, ClockIcon, ErrorIcon, SpinnerIcon } from '../components/icons';
+import { getFileName } from '../domain/path';
 
 type JobStatus = 'queued' | 'generating' | 'done' | 'error';
 
@@ -28,8 +30,8 @@ const ProxyContext = createContext<ProxyContextValue | null>(null);
 
 export function ProxyProvider({ children }: { children: React.ReactNode }) {
   const [jobs, setJobs] = useState<ProxyJob[]>([]);
-  const queue      = useRef<QueueEntry[]>([]);
-  const working    = useRef(false);
+  const queue = useRef<QueueEntry[]>([]);
+  const working = useRef(false);
   const dismissRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const scheduleBatchDismiss = useCallback(() => {
@@ -42,7 +44,10 @@ export function ProxyProvider({ children }: { children: React.ReactNode }) {
 
   const cancelBatchDismiss = useCallback(() => {
     const t = dismissRef.current.get('__batch__');
-    if (t != null) { clearTimeout(t); dismissRef.current.delete('__batch__'); }
+    if (t != null) {
+      clearTimeout(t);
+      dismissRef.current.delete('__batch__');
+    }
   }, []);
 
   // Drain the queue one job at a time
@@ -53,21 +58,17 @@ export function ProxyProvider({ children }: { children: React.ReactNode }) {
 
     const entry = queue.current.shift()!;
 
-    setJobs(prev =>
-      prev.map(j => j.id === entry.id ? { ...j, status: 'generating' } : j)
-    );
+    setJobs((prev) => prev.map((j) => (j.id === entry.id ? { ...j, status: 'generating' } : j)));
 
     try {
-      const proxyPath = await invoke<string>('generate_proxy', { originalPath: entry.originalPath });
+      const proxyPath = await generateProxy(entry.originalPath);
 
-      setJobs(prev =>
-        prev.map(j => j.id === entry.id ? { ...j, status: 'done' } : j)
-      );
-      invoke('precache_proxies_folder', { originalPath: entry.originalPath }).catch(() => {});
+      setJobs((prev) => prev.map((j) => (j.id === entry.id ? { ...j, status: 'done' } : j)));
+      precacheProxiesFolder(entry.originalPath).catch(() => {});
       entry.resolve(proxyPath);
     } catch (err) {
-      setJobs(prev =>
-        prev.map(j => j.id === entry.id ? { ...j, status: 'error', error: String(err) } : j)
+      setJobs((prev) =>
+        prev.map((j) => (j.id === entry.id ? { ...j, status: 'error', error: String(err) } : j)),
       );
       entry.reject(err);
     } finally {
@@ -80,16 +81,19 @@ export function ProxyProvider({ children }: { children: React.ReactNode }) {
     }
   }, [cancelBatchDismiss, scheduleBatchDismiss]);
 
-  const queueProxy = useCallback((originalPath: string): Promise<string> => {
-    const id       = crypto.randomUUID();
-    const fileName = originalPath.replace(/\\/g, '/').split('/').pop() ?? originalPath;
+  const queueProxy = useCallback(
+    (originalPath: string): Promise<string> => {
+      const id = crypto.randomUUID();
+      const fileName = getFileName(originalPath);
 
-    return new Promise<string>((resolve, reject) => {
-      setJobs(prev => [...prev, { id, fileName, originalPath, status: 'queued' }]);
-      queue.current.push({ id, originalPath, resolve, reject });
-      processNext();
-    });
-  }, [processNext]);
+      return new Promise<string>((resolve, reject) => {
+        setJobs((prev) => [...prev, { id, fileName, originalPath, status: 'queued' }]);
+        queue.current.push({ id, originalPath, resolve, reject });
+        processNext();
+      });
+    },
+    [processNext],
+  );
 
   return (
     <ProxyContext.Provider value={{ queueProxy, jobs }}>
@@ -108,13 +112,13 @@ export function useProxy() {
 // ── Toast panel ───────────────────────────────────────────────────────────────
 
 function ProxyToastPanel({ jobs }: { jobs: ProxyJob[] }) {
-  const total      = jobs.length;
-  const done       = jobs.filter(j => j.status === 'done' || j.status === 'error').length;
-  const generating = jobs.find(j => j.status === 'generating');
+  const total = jobs.length;
+  const done = jobs.filter((j) => j.status === 'done' || j.status === 'error').length;
+  const generating = jobs.find((j) => j.status === 'generating');
   const allSettled = done === total;
-  const pct        = total > 0 ? (done / total) * 100 : 0;
+  const pct = total > 0 ? (done / total) * 100 : 0;
 
-  const errors     = jobs.filter(j => j.status === 'error');
+  const errors = jobs.filter((j) => j.status === 'error');
 
   return (
     <div className="fixed bottom-4 left-4 z-[9999] flex flex-col gap-2 pointer-events-none">
@@ -143,9 +147,7 @@ function ProxyToastPanel({ jobs }: { jobs: ProxyJob[] }) {
         <div className="h-0.5 bg-white/10">
           <div
             className={`h-full transition-all duration-300 rounded-full ${
-              allSettled
-                ? errors.length > 0 ? 'bg-red-400' : 'bg-emerald-400'
-                : 'bg-violet-400'
+              allSettled ? (errors.length > 0 ? 'bg-red-400' : 'bg-emerald-400') : 'bg-violet-400'
             }`}
             style={{ width: `${pct}%` }}
           />
@@ -156,36 +158,9 @@ function ProxyToastPanel({ jobs }: { jobs: ProxyJob[] }) {
 }
 
 function StatusIcon({ status }: { status: JobStatus }) {
-  if (status === 'queued') {
-    return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-        strokeWidth="2" strokeLinecap="round" className="shrink-0 text-white/25">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 6v6l4 2" />
-      </svg>
-    );
-  }
-  if (status === 'generating') {
-    return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-        strokeWidth="2" strokeLinecap="round" className="animate-spin shrink-0 text-violet-400">
-        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-      </svg>
-    );
-  }
-  if (status === 'done') {
-    return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-emerald-400">
-        <path d="M20 6L9 17l-5-5" />
-      </svg>
-    );
-  }
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-red-400">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M15 9l-6 6M9 9l6 6" />
-    </svg>
-  );
+  if (status === 'queued') return <ClockIcon />;
+  if (status === 'generating')
+    return <SpinnerIcon className="animate-spin shrink-0 text-violet-400" />;
+  if (status === 'done') return <CheckIcon />;
+  return <ErrorIcon />;
 }

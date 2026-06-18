@@ -30,7 +30,7 @@ impl Provider {
 }
 
 fn run(bin: &str, args: &[&str]) -> Result<Output, String> {
-    crate::quiet_command(bin)
+    crate::process_tools::quiet_command(bin)
         .args(args)
         .output()
         .map_err(|e| format!("{bin}: {e}"))

@@ -10,7 +10,10 @@ export default function ChevronNav({ visible, metaPanelOpen, libraryOpen, onPrev
   return (
     <>
       <button
-        onClick={e => { e.stopPropagation(); onPrev(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onPrev();
+        }}
         style={{ left: libraryOpen ? 'calc(1rem + 480px)' : '1rem' }}
         className={`chrome absolute top-1/2 -translate-y-1/2 z-40 flex items-center justify-center w-12 h-12 rounded-full glass text-white/80 hover:text-white hover:bg-white/20 transition-[opacity,left] duration-300 ${
           visible ? 'chrome-visible' : 'chrome-hidden'
@@ -23,7 +26,10 @@ export default function ChevronNav({ visible, metaPanelOpen, libraryOpen, onPrev
       </button>
 
       <button
-        onClick={e => { e.stopPropagation(); onNext(); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onNext();
+        }}
         style={{ right: metaPanelOpen ? 'calc(1rem + 18rem)' : '1rem' }}
         className={`chrome absolute top-1/2 -translate-y-1/2 z-40 flex items-center justify-center w-12 h-12 rounded-full glass text-white/80 hover:text-white hover:bg-white/20 transition-[opacity,right] duration-300 ${
           visible ? 'chrome-visible' : 'chrome-hidden'

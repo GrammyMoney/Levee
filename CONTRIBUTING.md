@@ -25,7 +25,7 @@ to its terms for your contributions.
 1. Fork the repo and create a branch for your change.
 2. Make your change. Keep the style consistent with the surrounding code.
 3. Make sure it builds:
-   - Frontend types: `npm run build` (or `npx tsc --noEmit`)
+   - Frontend types: `pnpm run build` (or `pnpm exec tsc --noEmit`)
    - Rust: `cargo build` in `src-tauri/`
 4. Open a pull request describing what you changed and why.
 

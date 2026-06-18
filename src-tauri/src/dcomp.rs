@@ -26,7 +26,14 @@ pub fn start(hwnd: isize, width: u32, height: u32, handle: mpv::Handle, resize: 
 }
 
 #[cfg(not(windows))]
-pub fn start(_hwnd: isize, _width: u32, _height: u32, _handle: mpv::Handle, _resize: Arc<AtomicU64>) {}
+pub fn start(
+    _hwnd: isize,
+    _width: u32,
+    _height: u32,
+    _handle: mpv::Handle,
+    _resize: Arc<AtomicU64>,
+) {
+}
 
 #[cfg(windows)]
 use std::sync::{Condvar, Mutex};
@@ -76,7 +83,10 @@ fn run(
         MipLevels: 1,
         ArraySize: 1,
         Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-        SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+        SampleDesc: DXGI_SAMPLE_DESC {
+            Count: 1,
+            Quality: 0,
+        },
         Usage: D3D11_USAGE_DEFAULT,
         BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
         CPUAccessFlags: 0,
@@ -115,7 +125,10 @@ fn run(
             Height: height,
             Format: DXGI_FORMAT_B8G8R8A8_UNORM,
             Stereo: false.into(),
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
             BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
             BufferCount: 2,
             Scaling: DXGI_SCALING_STRETCH,
@@ -143,9 +156,14 @@ fn run(
         let mut buf = vec![0u8; stride * height as usize];
 
         // 6. mpv software render context + update signal.
-        let render_ctx = mpv::RenderCtx::create_sw(handle)
-            .map_err(|e| { eprintln!("[dcomp] {e}"); windows::core::Error::empty() })?;
-        let signal = Arc::new(RenderSignal { pending: Mutex::new(true), cv: Condvar::new() });
+        let render_ctx = mpv::RenderCtx::create_sw(handle).map_err(|e| {
+            eprintln!("[dcomp] {e}");
+            windows::core::Error::empty()
+        })?;
+        let signal = Arc::new(RenderSignal {
+            pending: Mutex::new(true),
+            cv: Condvar::new(),
+        });
         let cb_ctx = Arc::into_raw(signal.clone()) as *mut core::ffi::c_void; // leaked for process life
         render_ctx.set_update_callback(on_mpv_update, cb_ctx);
 
@@ -156,7 +174,10 @@ fn run(
             {
                 let mut pending = signal.pending.lock().unwrap();
                 while !*pending {
-                    let (g, to) = signal.cv.wait_timeout(pending, Duration::from_millis(100)).unwrap();
+                    let (g, to) = signal
+                        .cv
+                        .wait_timeout(pending, Duration::from_millis(100))
+                        .unwrap();
                     pending = g;
                     if to.timed_out() {
                         break;

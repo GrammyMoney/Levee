@@ -3,12 +3,17 @@ import { createContext, useContext, useState, useCallback, type ReactNode } from
 const PREFS_KEY = 'levee_prefs';
 
 function loadPrefs(): Record<string, unknown> {
-  try { return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}'); }
-  catch { return {}; }
+  try {
+    return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}');
+  } catch {
+    return {};
+  }
 }
 
 function savePrefs(prefs: Record<string, unknown>) {
-  try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {}
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch {}
 }
 
 interface SettingsContextValue {
@@ -26,13 +31,13 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [preferProxies, _setPreferProxies] = useState<boolean>(
-    () => (loadPrefs().preferProxies as boolean) ?? false
+    () => (loadPrefs().preferProxies as boolean) ?? false,
   );
   const [defaultPlayerPrompted, _setDefaultPlayerPrompted] = useState<boolean>(
-    () => (loadPrefs().defaultPlayerPrompted as boolean) ?? false
+    () => (loadPrefs().defaultPlayerPrompted as boolean) ?? false,
   );
   const [suiteOnboarded, _setSuiteOnboarded] = useState<boolean>(
-    () => (loadPrefs().suiteOnboarded as boolean) ?? false
+    () => (loadPrefs().suiteOnboarded as boolean) ?? false,
   );
 
   const setPreferProxies = useCallback((v: boolean) => {
@@ -57,11 +62,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <SettingsContext.Provider value={{
-      preferProxies, setPreferProxies,
-      defaultPlayerPrompted, setDefaultPlayerPrompted,
-      suiteOnboarded, setSuiteOnboarded,
-    }}>
+    <SettingsContext.Provider
+      value={{
+        preferProxies,
+        setPreferProxies,
+        defaultPlayerPrompted,
+        setDefaultPlayerPrompted,
+        suiteOnboarded,
+        setSuiteOnboarded,
+      }}
+    >
       {children}
     </SettingsContext.Provider>
   );
