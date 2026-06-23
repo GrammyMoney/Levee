@@ -28,14 +28,23 @@ export function useMpvPlayer() {
   const loopRef = useRef(false);
   // Resume position to apply once a freshly-loaded file reports a duration.
   const pendingSeekRef = useRef<number | null>(null);
+  const seekTriesRef = useRef(0);
 
   useEffect(() => {
     const unlisten = listenMpvState((s) => {
-      // Apply a pending resume seek once the new file has a known duration.
+      // Apply a pending resume seek once the new file is seekable. A single seek
+      // right after loadfile is often dropped while mpv is still initializing the
+      // demuxer (the file then plays from 0), so re-issue it until time-pos
+      // actually lands near the target.
       if (pendingSeekRef.current != null && s.duration > 0) {
-        const t = pendingSeekRef.current;
-        pendingSeekRef.current = null;
-        mpvSeek(t).catch(() => {});
+        const target = Math.min(pendingSeekRef.current, s.duration - 0.5);
+        if (s.timePos < target - 1.5 && seekTriesRef.current < 20) {
+          seekTriesRef.current += 1;
+          mpvSeek(target).catch(() => {});
+        } else {
+          pendingSeekRef.current = null;
+          seekTriesRef.current = 0;
+        }
       }
       setState((prev) => ({
         ...prev,
@@ -53,6 +62,7 @@ export function useMpvPlayer() {
 
   const openFile = useCallback((path: string, seekTo?: number) => {
     pendingSeekRef.current = seekTo && seekTo > 0 ? seekTo : null;
+    seekTriesRef.current = 0;
     setState((prev) => ({ ...prev, currentTime: 0, duration: 0 }));
     mpvLoad(path).catch((err) => console.error('[mpv] load failed:', err));
   }, []);
