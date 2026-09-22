@@ -63,7 +63,7 @@ Download the installer from [Releases](../../releases) and run it (per-user, no 
 
 ## Roadmap
 
-**Next up:** LucidLink integration.
+**Next up:** Shade integration.
 
 **Later releases:** macOS client · headless Linux client for proxy generation · maybe an Enterprise version.
 
