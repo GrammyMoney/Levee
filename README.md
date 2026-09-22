@@ -5,7 +5,7 @@
 <p align="center">A minimal video player built for file-streaming workflows.</p>
 
 > [!NOTE]
-> [Suite](https://www.suitestudios.io/) is currently the only supported cloud file streaming client — [LucidLink](https://www.lucidlink.com/) support lands in the next release.
+> [Suite](https://www.suitestudios.io/) and [LucidLink](https://www.lucidlink.com/) are now both supported. [Shade](https://shade.inc/) support coming soon!
 
 ---
 
